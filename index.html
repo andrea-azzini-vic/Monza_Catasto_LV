@@ -1,0 +1,1555 @@
+<!doctype html>
+<html lang="it">
+    <head>
+        <meta charset="utf-8">
+        <meta http-equiv="X-UA-Compatible" content="IE=edge">
+        <meta name="viewport" content="initial-scale=1,user-scalable=no,maximum-scale=1,width=device-width">
+        <meta name="mobile-web-app-capable" content="yes">
+        <meta name="apple-mobile-web-app-capable" content="yes">
+        <link rel="stylesheet" href="css/leaflet.css">
+        <link rel="stylesheet" href="css/L.Control.Layers.Tree.css">
+        <link rel="stylesheet" href="css/qgis2web.css">
+        <link rel="stylesheet" href="css/fontawesome-all.min.css">
+        <link rel="stylesheet" href="css/filter.css">
+        <link rel="stylesheet" href="css/nouislider.min.css">
+        <link rel="stylesheet" href="css/leaflet-control-geocoder.Geocoder.css">
+        <link rel="stylesheet" href="css/leaflet-measure.css">
+        <style>
+        html, body, #map {
+            width: 100%;
+            height: 100%;
+            padding: 0;
+            margin: 0;
+            background-color: #172642;  /* aggiunta dei parametri background_color e color*/
+            color: white;
+        }
+        /* aggiunta dei parametri css per il div "header"*/
+        #header {
+          font-family: rubik, verdana;
+          font-size: 30px;
+          font-weight:600;
+          color:white;
+          padding: 2px;
+          margin: 0px;
+          height: 50px;
+          text-align: center;
+        }
+        #header2 {
+          font-family: rubik, verdana;
+          font-size: 20px;
+          font-weight:600;
+          color:white;
+          padding: 0;
+          margin: 0;
+          height: 50px;
+          text-align: center
+        }
+        </style>
+        <title>Monza Catasto Lombardo-Veneto</title>
+    </head>
+    <body>
+        <div id="header"><p>Monza Catasto Lombardo-Veneto 1857</p></div>
+        <div id="header2"><p>DEMO Webmap con toponimi e destinazioni d'uso</p></div>
+        <div id="map"></div>
+        <script src="js/qgis2web_expressions.js"></script>
+        <script src="js/leaflet.js"></script>
+        <script src="js/L.Control.Layers.Tree.min.js"></script>
+        <script src="js/leaflet.rotatedMarker.js"></script>
+        <script src="js/leaflet.pattern.js"></script>
+        <script src="js/leaflet-hash.js"></script>
+        <script src="js/Autolinker.min.js"></script>
+        <script src="js/rbush.min.js"></script>
+        <script src="js/labelgun.min.js"></script>
+        <script src="js/labels.js"></script>
+        <script src="js/leaflet-control-geocoder.Geocoder.js"></script>
+        <script src="js/leaflet-measure.js"></script>
+        <script src="js/tailDT.js"></script>
+        <script src="js/nouislider.min.js"></script>
+        <script src="js/wNumb.js"></script>
+        <script src="data/FiumeLambro4_2.js"></script>
+        <script src="data/toponimi_lombardo_veneto_37_3.js"></script>
+        <script src="data/Rogge2_4.js"></script>
+        <script>
+        var highlightLayer;
+        function highlightFeature(e) {
+            highlightLayer = e.target;
+
+            if (e.target.feature.geometry.type === 'LineString' || e.target.feature.geometry.type === 'MultiLineString') {
+              highlightLayer.setStyle({
+                color: '#ffff00',
+              });
+            } else {
+              highlightLayer.setStyle({
+                fillColor: '#ffff00',
+                /* modifica trasparenza highliht layer da 1 a 0.4*/
+                fillOpacity: 0.4
+              });
+            }
+            highlightLayer.openPopup();
+        }
+        var map = L.map('map', {
+            zoomControl:true, maxZoom:28, minZoom:13
+        }).fitBounds([[45.527090477804666,9.243891710886765],[45.64230320421684,9.35862636952628]]);
+        var hash = new L.Hash(map);
+        map.attributionControl.setPrefix('<a href="https://github.com/tomchadwin/qgis2web" target="_blank">qgis2web</a> &middot; <a href="https://leafletjs.com" title="A JS library for interactive maps">Leaflet</a> &middot; <a href="https://qgis.org">QGIS</a>');
+        var autolinker = new Autolinker({truncate: {length: 30, location: 'smart'}});
+        function removeEmptyRowsFromPopupContent(content, feature) {
+         var tempDiv = document.createElement('div');
+         tempDiv.innerHTML = content;
+         var rows = tempDiv.querySelectorAll('tr');
+         for (var i = 0; i < rows.length; i++) {
+             var td = rows[i].querySelector('td.visible-with-data');
+             var key = td ? td.id : '';
+             if (td && td.classList.contains('visible-with-data') && feature.properties[key] == null) {
+                 rows[i].parentNode.removeChild(rows[i]);
+             }
+         }
+         return tempDiv.innerHTML;
+        }
+        document.querySelector(".leaflet-popup-pane").addEventListener("load", function(event) {
+          var tagName = event.target.tagName,
+            popup = map._popup;
+          // Also check if flag is already set.
+          if (tagName === "IMG" && popup && !popup._updated) {
+            popup._updated = true; // Set flag to prevent looping.
+            popup.update();
+          }
+        }, true);
+        var measureControl = new L.Control.Measure({
+            position: 'topleft',
+            primaryLengthUnit: 'meters',
+            secondaryLengthUnit: 'kilometers',
+            primaryAreaUnit: 'sqmeters',
+            secondaryAreaUnit: 'hectares'
+        });
+        measureControl.addTo(map);
+        document.getElementsByClassName('leaflet-control-measure-toggle')[0]
+        .innerHTML = '';
+        document.getElementsByClassName('leaflet-control-measure-toggle')[0]
+        .className += ' fas fa-ruler';
+        var bounds_group = new L.featureGroup([]);
+        function setBounds() {
+            map.setMaxBounds(map.getBounds());
+        }
+        map.createPane('pane_OSMStandard_0');
+        map.getPane('pane_OSMStandard_0').style.zIndex = 400;
+        var layer_OSMStandard_0 = L.tileLayer('http://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            pane: 'pane_OSMStandard_0',
+            opacity: 1.0,
+            attribution: '<a href="https://www.openstreetmap.org/copyright">© OpenStreetMap contributors, CC-BY-SA</a>',
+            minZoom: 12,
+            maxZoom: 28,
+            minNativeZoom: 0,
+            maxNativeZoom: 19
+        });
+        layer_OSMStandard_0;
+        map.addLayer(layer_OSMStandard_0);
+        map.createPane('pane_GoogleSatellite_1');
+        map.getPane('pane_GoogleSatellite_1').style.zIndex = 401;
+        var layer_GoogleSatellite_1 = L.tileLayer('https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}', {
+            pane: 'pane_GoogleSatellite_1',
+            opacity: 1.0,
+            attribution: '<a href="https://www.google.at/permissions/geoguidelines/attr-guide.html">Map data ©2015 Google</a>',
+            minZoom: 12,
+            maxZoom: 28,
+            minNativeZoom: 0,
+            maxNativeZoom: 20
+        });
+        layer_GoogleSatellite_1;
+        map.addLayer(layer_GoogleSatellite_1);
+        function pop_FiumeLambro4_2(feature, layer) {
+            layer.on({
+                mouseout: function(e) {
+                    for (var i in e.target._eventParents) {
+                        if (typeof e.target._eventParents[i].resetStyle === 'function') {
+                            e.target._eventParents[i].resetStyle(e.target);
+                        }
+                    }
+                    if (typeof layer.closePopup == 'function') {
+                        layer.closePopup();
+                    } else {
+                        layer.eachLayer(function(feature){
+                            feature.closePopup()
+                        });
+                    }
+                },
+                mouseover: highlightFeature,
+            });
+            var popupContent = '<table>\
+                </table>';
+            layer.bindPopup(popupContent, {maxHeight: 400});
+            var popup = layer.getPopup();
+            var content = popup.getContent();
+            var updatedContent = removeEmptyRowsFromPopupContent(content, feature);
+            popup.setContent(updatedContent);
+        }
+
+        function style_FiumeLambro4_2_0() {
+            return {
+                pane: 'pane_FiumeLambro4_2',
+                 /*modifica trasparenza Lambro da 1 a 0.6*/
+                opacity: 0.6,
+                color: 'rgba(166,206,227,1.0)',
+                dashArray: '',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 1.0, 
+                fill: true,
+                /*modifica trasparenza Lambro da 1 a 0.6*/
+                fillOpacity: 0.6,
+                fillColor: 'rgba(166,206,227,1.0)',
+                interactive: false,
+            }
+        }
+        map.createPane('pane_FiumeLambro4_2');
+        map.getPane('pane_FiumeLambro4_2').style.zIndex = 402;
+        map.getPane('pane_FiumeLambro4_2').style['mix-blend-mode'] = 'normal';
+        var layer_FiumeLambro4_2 = new L.geoJson(json_FiumeLambro4_2, {
+            attribution: '',
+            interactive: false,
+            dataVar: 'json_FiumeLambro4_2',
+            layerName: 'layer_FiumeLambro4_2',
+            pane: 'pane_FiumeLambro4_2',
+            onEachFeature: pop_FiumeLambro4_2,
+            style: style_FiumeLambro4_2_0,
+        });
+        bounds_group.addLayer(layer_FiumeLambro4_2);
+        map.addLayer(layer_FiumeLambro4_2);
+        function pop_toponimi_lombardo_veneto_37_3(feature, layer) {
+            layer.on({
+                mouseout: function(e) {
+                    for (var i in e.target._eventParents) {
+                        if (typeof e.target._eventParents[i].resetStyle === 'function') {
+                            e.target._eventParents[i].resetStyle(e.target);
+                        }
+                    }
+                    if (typeof layer.closePopup == 'function') {
+                        layer.closePopup();
+                    } else {
+                        layer.eachLayer(function(feature){
+                            feature.closePopup()
+                        });
+                    }
+                },
+                mouseover: highlightFeature,
+            });
+            /* modifica popup togliendo la prima riga che riportava solo il mappale e inserendo il carattere di escape &#39 per l'apostrofo*/
+            var popupContent = '<table>\
+                    <tr>\
+                        <td class="visible-with-data" id="toponimo"colspan="2"><strong>Toponimo</strong><br />' + (feature.properties['toponimo'] !== null ? autolinker.link(feature.properties['toponimo'].toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td class="visible-with-data" id="Destin Uso"colspan="2"><strong>Destinazione d&#39uso</strong><br />' + (feature.properties['Destin Uso'] !== null ? autolinker.link(feature.properties['Destin Uso'].toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td class="visible-with-data" id="mappale"colspan="2"><strong>Mappale</strong><br />' + (feature.properties['mappale'] !== null ? autolinker.link(feature.properties['mappale'].toLocaleString()) : '') + '</td>\
+                    </tr>\
+                </table>';
+            layer.bindPopup(popupContent, {maxHeight: 400});
+            var popup = layer.getPopup();
+            var content = popup.getContent();
+            var updatedContent = removeEmptyRowsFromPopupContent(content, feature);
+            popup.setContent(updatedContent);
+        }
+
+        function style_toponimi_lombardo_veneto_37_3_0() {
+            return {
+                pane: 'pane_toponimi_lombardo_veneto_37_3',
+                opacity: 1,
+                color: 'rgba(227,26,28,1.0)',
+                dashArray: '',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 1.0, 
+                fill: true,
+                fillOpacity: 1,
+                fillColor: 'rgba(227,26,28,0.0)',
+                interactive: true,
+            }
+        }
+        map.createPane('pane_toponimi_lombardo_veneto_37_3');
+        map.getPane('pane_toponimi_lombardo_veneto_37_3').style.zIndex = 403;
+        map.getPane('pane_toponimi_lombardo_veneto_37_3').style['mix-blend-mode'] = 'normal';
+        var layer_toponimi_lombardo_veneto_37_3 = new L.geoJson(json_toponimi_lombardo_veneto_37_3, {
+            attribution: '',
+            interactive: true,
+            dataVar: 'json_toponimi_lombardo_veneto_37_3',
+            layerName: 'layer_toponimi_lombardo_veneto_37_3',
+            pane: 'pane_toponimi_lombardo_veneto_37_3',
+            onEachFeature: pop_toponimi_lombardo_veneto_37_3,
+            style: style_toponimi_lombardo_veneto_37_3_0,
+        });
+        bounds_group.addLayer(layer_toponimi_lombardo_veneto_37_3);
+        map.addLayer(layer_toponimi_lombardo_veneto_37_3);
+        function pop_Rogge2_4(feature, layer) {
+            layer.on({
+                mouseout: function(e) {
+                    for (var i in e.target._eventParents) {
+                        if (typeof e.target._eventParents[i].resetStyle === 'function') {
+                            e.target._eventParents[i].resetStyle(e.target);
+                        }
+                    }
+                    if (typeof layer.closePopup == 'function') {
+                        layer.closePopup();
+                    } else {
+                        layer.eachLayer(function(feature){
+                            feature.closePopup()
+                        });
+                    }
+                },
+                mouseover: highlightFeature,
+            });
+            var popupContent = '<table>\
+                </table>';
+            layer.bindPopup(popupContent, {maxHeight: 400});
+            var popup = layer.getPopup();
+            var content = popup.getContent();
+            var updatedContent = removeEmptyRowsFromPopupContent(content, feature);
+            popup.setContent(updatedContent);
+        }
+
+        function style_Rogge2_4_0() {
+            return {
+                pane: 'pane_Rogge2_4',
+                opacity: 1,
+                color: 'rgba(166,206,227,1.0)',
+                dashArray: '',
+                lineCap: 'square',
+                lineJoin: 'bevel',
+                weight: 2.0,
+                fillOpacity: 0,
+                interactive: false,
+            }
+        }
+        map.createPane('pane_Rogge2_4');
+        map.getPane('pane_Rogge2_4').style.zIndex = 404;
+        map.getPane('pane_Rogge2_4').style['mix-blend-mode'] = 'normal';
+        var layer_Rogge2_4 = new L.geoJson(json_Rogge2_4, {
+            attribution: '',
+            interactive: false,
+            dataVar: 'json_Rogge2_4',
+            layerName: 'layer_Rogge2_4',
+            pane: 'pane_Rogge2_4',
+            onEachFeature: pop_Rogge2_4,
+            style: style_Rogge2_4_0,
+        });
+        bounds_group.addLayer(layer_Rogge2_4);
+        map.addLayer(layer_Rogge2_4);
+        var osmGeocoder = new L.Control.Geocoder({
+            collapsed: true,
+            position: 'topleft',
+            text: 'Search',
+            title: 'Testing'
+        }).addTo(map);
+        document.getElementsByClassName('leaflet-control-geocoder-icon')[0]
+        .className += ' fa fa-search';
+        document.getElementsByClassName('leaflet-control-geocoder-icon')[0]
+        .title += 'Search for a place';
+        var baseMaps = {};
+        //L.control.layers modifica dell'ordine di visualizzazione e del nome del layer da 'toponimi_lombardo_veneto_27' a 'Catasto Lombardo-Veneto'
+        var overlaysTree = [
+            {label: '<img src="legend/toponimi_lombardo_veneto_37_3.png" /> Catasto Lombardo-Veneto LV', layer: layer_toponimi_lombardo_veneto_37_3},
+            {label: '<img src="legend/FiumeLambro4_2.png" /> Fiume Lambro LV', layer: layer_FiumeLambro4_2},
+            {label: '<img src="legend/Rogge2_4.png" /> Rogge LV', layer: layer_Rogge2_4},           
+            {label: "Google Satellite", layer: layer_GoogleSatellite_1},
+            {label: "OSM Standard", layer: layer_OSMStandard_0},]
+        var lay = L.control.layers.tree(null, overlaysTree,{
+            //namedToggle: true,
+            //selectorBack: false,
+            //closedSymbol: '&#8862; &#x1f5c0;',
+            //openedSymbol: '&#8863; &#x1f5c1;',
+            //collapseAll: 'Collapse all',
+            //expandAll: 'Expand all',
+            collapsed: true,
+        });
+        lay.addTo(map);
+        L.control.scale({position: 'bottomleft', maxWidth: 100, metric: true, imperial: false, updateWhenIdle: false}).addTo(map);
+        setBounds();
+        var mapDiv = document.getElementById('map');
+        var row = document.createElement('div');
+        row.className="row";
+        row.id="all";
+        row.style.height = "100%";
+        var col1 = document.createElement('div');
+        col1.className="col9";
+        col1.id = "mapWindow";
+        col1.style.height = "99%";
+        col1.style.width = "80%";
+        col1.style.display = "inline-block";
+        var col2 = document.createElement('div');
+        col2.className="col3";
+        col2.id = "menu";
+        col2.style.display = "inline-block";
+        mapDiv.parentNode.insertBefore(row, mapDiv);
+        document.getElementById("all").appendChild(col1);
+        document.getElementById("all").appendChild(col2);
+        col1.appendChild(mapDiv)
+        var Filters = {"Destin Uso": "str","toponimo": "str"};
+        function filterFunc() {
+          map.eachLayer(function(lyr){
+          if ("options" in lyr && "dataVar" in lyr["options"]){
+            features = this[lyr["options"]["dataVar"]].features.slice(0);
+            try{
+              for (key in Filters){
+                keyS = key.replace(/[^a-zA-Z0-9_]/g, "")
+                if (Filters[key] == "str" || Filters[key] == "bool"){
+                  var selection = [];
+                  var options = document.getElementById("sel_" + keyS).options
+                  for (var i=0; i < options.length; i++) {
+                    if (options[i].selected) selection.push(options[i].value);
+                  }
+                    try{
+                      if (key in features[0].properties){
+                        for (i = features.length - 1;
+                          i >= 0; --i){
+                          if (selection.indexOf(
+                          features[i].properties[key])<0
+                          && selection.length>0) {
+                          features.splice(i,1);
+                          }
+                        }
+                      }
+                    } catch(err){
+                  }
+                }
+                if (Filters[key] == "int"){
+                  sliderVals =  document.getElementById(
+                    "div_" + keyS).noUiSlider.get();
+                  try{
+                    if (key in features[0].properties){
+                    for (i = features.length - 1; i >= 0; --i){
+                      if (parseInt(features[i].properties[key])
+                          < sliderVals[0]
+                          || parseInt(features[i].properties[key])
+                          > sliderVals[1]){
+                            features.splice(i,1);
+                          }
+                        }
+                      }
+                    } catch(err){
+                    }
+                  }
+                if (Filters[key] == "real"){
+                  sliderVals =  document.getElementById(
+                    "div_" + keyS).noUiSlider.get();
+                  try{
+                    if (key in features[0].properties){
+                    for (i = features.length - 1; i >= 0; --i){
+                      if (features[i].properties[key]
+                          < sliderVals[0]
+                          || features[i].properties[key]
+                          > sliderVals[1]){
+                            features.splice(i,1);
+                          }
+                        }
+                      }
+                    } catch(err){
+                    }
+                  }
+                if (Filters[key] == "date"
+                  || Filters[key] == "datetime"
+                  || Filters[key] == "time"){
+                  try{
+                    if (key in features[0].properties){
+                      HTMLkey = key.replace(/[&\/\\#,+()$~%.'":*?<>{} ]/g, '');
+                      startdate = document.getElementById("dat_" +
+                        HTMLkey + "_date1").value.replace(" ", "T");
+                      enddate = document.getElementById("dat_" +
+                        HTMLkey + "_date2").value.replace(" ", "T");
+                      for (i = features.length - 1; i >= 0; --i){
+                        if (features[i].properties[key] < startdate
+                          || features[i].properties[key] > enddate){
+                          features.splice(i,1);
+                        }
+                      }
+                    }
+                  } catch(err){
+                  }
+                }
+              }
+            } catch(err){
+            }
+          this[lyr["options"]["layerName"]].clearLayers();
+          this[lyr["options"]["layerName"]].addData(features);
+          }
+          })
+        }
+            document.getElementById("menu").appendChild(
+                document.createElement("div"));
+            var div_DestinUso = document.createElement('div');
+            div_DestinUso.id = "div_DestinUso";
+            div_DestinUso.className= "filterselect";
+            document.getElementById("menu").appendChild(div_DestinUso);
+            sel_DestinUso = document.createElement('select');
+            sel_DestinUso.multiple = true;
+            sel_DestinUso.size = 10;
+            sel_DestinUso.id = "sel_DestinUso";
+            var DestinUso_options_str = "<option value='' unselected></option>";
+            sel_DestinUso.onchange = function(){filterFunc()};
+            DestinUso_options_str  += '<option value="NULL">NULL</option>';
+            DestinUso_options_str  += '<option value="Aratorio">Aratorio</option>';
+            DestinUso_options_str  += '<option value="Aratorio adacquatorio">Aratorio adacquatorio</option>';
+            DestinUso_options_str  += '<option value="Aratorio vitato">Aratorio vitato</option>';
+            DestinUso_options_str  += '<option value="Aratorio vitato adacquatorio">Aratorio vitato adacquatorio</option>';
+            DestinUso_options_str  += '<option value="Aratorio, ora Strada privata">Aratorio, ora Strada privata</option>';
+            DestinUso_options_str  += '<option value="Argine nudo">Argine nudo</option>';
+            DestinUso_options_str  += '<option value="Bosco castanile da taglio">Bosco castanile da taglio</option>';
+            DestinUso_options_str  += '<option value="Bosco ceduo dolce">Bosco ceduo dolce</option>';
+            DestinUso_options_str  += '<option value="Bosco ceduo forte">Bosco ceduo forte</option>';
+            DestinUso_options_str  += '<option value="Bosco ceduo misto">Bosco ceduo misto</option>';
+            DestinUso_options_str  += '<option value="Bosco d&apos;alto fusto dolce">Bosco d&apos;alto fusto dolce</option>';
+            DestinUso_options_str  += '<option value="Bosco d&apos;alto fusto forte">Bosco d&apos;alto fusto forte</option>';
+            DestinUso_options_str  += '<option value="Bosco d&apos;alto fusto misto">Bosco d&apos;alto fusto misto</option>';
+            DestinUso_options_str  += '<option value="Coltivo da vanga">Coltivo da vanga</option>';
+            DestinUso_options_str  += '<option value="Fabbricato">Fabbricato</option>';
+            DestinUso_options_str  += '<option value="Ghiaia nuda">Ghiaia nuda</option>';
+            DestinUso_options_str  += '<option value="Giardino">Giardino</option>';
+            DestinUso_options_str  += '<option value="Orto">Orto</option>';
+            DestinUso_options_str  += '<option value="Pascolo">Pascolo</option>';
+            DestinUso_options_str  += '<option value="Pascolo, altre volte strada">Pascolo, altre volte strada</option>';
+            DestinUso_options_str  += '<option value="Prato">Prato</option>';
+            DestinUso_options_str  += '<option value="Prato adacquatorio">Prato adacquatorio</option>';
+            DestinUso_options_str  += '<option value="Stagno">Stagno</option>';
+            DestinUso_options_str  += '<option value="Zerbo">Zerbo</option>';
+            DestinUso_options_str  += '<option value="Zerbo, altre volte Strada">Zerbo, altre volte Strada</option>';
+            DestinUso_options_str  += '<option value="Zerbo, ora cava di ghiaja">Zerbo, ora cava di ghiaja</option>';
+            sel_DestinUso.innerHTML = DestinUso_options_str;
+            div_DestinUso.appendChild(sel_DestinUso);
+            var lab_DestinUso = document.createElement('div');
+            //cambio nome elenco filtro layer
+            lab_DestinUso.innerHTML = 'Destinazione d&#39uso';
+            lab_DestinUso.className = 'filterlabel';
+            div_DestinUso.appendChild(lab_DestinUso);
+            var reset_DestinUso = document.createElement('div');
+            reset_DestinUso.innerHTML = 'clear filter';
+            reset_DestinUso.className = 'filterlabel';
+            reset_DestinUso.onclick = function() {
+                var options = document.getElementById("sel_DestinUso").options;
+                for (var i=0; i < options.length; i++) {
+                    options[i].selected = false;
+                }
+                filterFunc();
+            };
+            div_DestinUso.appendChild(reset_DestinUso);
+            document.getElementById("menu").appendChild(
+                document.createElement("div"));
+            var div_toponimo = document.createElement('div');
+            div_toponimo.id = "div_toponimo";
+            div_toponimo.className= "filterselect";
+            document.getElementById("menu").appendChild(div_toponimo);
+            sel_toponimo = document.createElement('select');
+            sel_toponimo.multiple = true;
+            sel_toponimo.size = 10;
+            sel_toponimo.id = "sel_toponimo";
+            var toponimo_options_str = "<option value='' unselected></option>";
+            sel_toponimo.onchange = function(){filterFunc()};
+            toponimo_options_str  += '<option value="NULL">NULL</option>';
+            toponimo_options_str  += '<option value="A S. Martino Papa">A S. Martino Papa</option>';
+            toponimo_options_str  += '<option value="Ai Cappuccini">Ai Cappuccini</option>';
+            toponimo_options_str  += '<option value="Ai Capuccini">Ai Capuccini</option>';
+            toponimo_options_str  += '<option value="Ai Mulini">Ai Mulini</option>';
+            toponimo_options_str  += '<option value="Ai Vignoli">Ai Vignoli</option>';
+            toponimo_options_str  += '<option value="Al Boschetto secondo">Al Boschetto secondo</option>';
+            toponimo_options_str  += '<option value="Al Cassignolo">Al Cassignolo</option>';
+            toponimo_options_str  += '<option value="Al Chioso">Al Chioso</option>';
+            toponimo_options_str  += '<option value="Al Cimitero">Al Cimitero</option>';
+            toponimo_options_str  += '<option value="Al Colombajo Cappuccini">Al Colombajo Cappuccini</option>';
+            toponimo_options_str  += '<option value="Al Colombajo Melzi">Al Colombajo Melzi</option>';
+            toponimo_options_str  += '<option value="Al Deserto">Al Deserto</option>';
+            toponimo_options_str  += '<option value="Al Lambretto">Al Lambretto</option>';
+            toponimo_options_str  += '<option value="Al Mulino">Al Mulino</option>';
+            toponimo_options_str  += '<option value="Al Mulino Caccia">Al Mulino Caccia</option>';
+            toponimo_options_str  += '<option value="Al Mulino S. Vittore">Al Mulino S. Vittore</option>';
+            toponimo_options_str  += '<option value="Al R. Stradone">Al R. Stradone</option>';
+            toponimo_options_str  += '<option value="Al Rondò">Al Rondò</option>';
+            toponimo_options_str  += '<option value="Al S. Defendente">Al S. Defendente</option>';
+            toponimo_options_str  += '<option value="Al Viale">Al Viale</option>';
+            toponimo_options_str  += '<option value="Al confine">Al confine</option>';
+            toponimo_options_str  += '<option value="All&apos;Argine">All&apos;Argine</option>';
+            toponimo_options_str  += '<option value="Alla Balossa">Alla Balossa</option>';
+            toponimo_options_str  += '<option value="Alla Balotta">Alla Balotta</option>';
+            toponimo_options_str  += '<option value="Alla Barchessa">Alla Barchessa</option>';
+            toponimo_options_str  += '<option value="Alla Bettola">Alla Bettola</option>';
+            toponimo_options_str  += '<option value="Alla Birona">Alla Birona</option>';
+            toponimo_options_str  += '<option value="Alla Boldriga">Alla Boldriga</option>';
+            toponimo_options_str  += '<option value="Alla Boscherona">Alla Boscherona</option>';
+            toponimo_options_str  += '<option value="Alla Bressanella">Alla Bressanella</option>';
+            toponimo_options_str  += '<option value="Alla Cappelletta">Alla Cappelletta</option>';
+            toponimo_options_str  += '<option value="Alla Cassina Angelica">Alla Cassina Angelica</option>';
+            toponimo_options_str  += '<option value="Alla Cassina Brina">Alla Cassina Brina</option>';
+            toponimo_options_str  += '<option value="Alla Cassina Crippa">Alla Cassina Crippa</option>';
+            toponimo_options_str  += '<option value="Alla Cassina Felice">Alla Cassina Felice</option>';
+            toponimo_options_str  += '<option value="Alla Cassina Fornace">Alla Cassina Fornace</option>';
+            toponimo_options_str  += '<option value="Alla Cassina Rondò">Alla Cassina Rondò</option>';
+            toponimo_options_str  += '<option value="Alla Cassina Villa">Alla Cassina Villa</option>';
+            toponimo_options_str  += '<option value="Alla Cassinazza">Alla Cassinazza</option>';
+            toponimo_options_str  += '<option value="Alla Cattabrega">Alla Cattabrega</option>';
+            toponimo_options_str  += '<option value="Alla Cavallina">Alla Cavallina</option>';
+            toponimo_options_str  += '<option value="Alla Cavrigola Prima">Alla Cavrigola Prima</option>';
+            toponimo_options_str  += '<option value="Alla Cavrigola seconda">Alla Cavrigola seconda</option>';
+            toponimo_options_str  += '<option value="Alla Colombaja">Alla Colombaja</option>';
+            toponimo_options_str  += '<option value="Alla Delfina">Alla Delfina</option>';
+            toponimo_options_str  += '<option value="Alla Fornace">Alla Fornace</option>';
+            toponimo_options_str  += '<option value="Alla Gallarana">Alla Gallarana</option>';
+            toponimo_options_str  += '<option value="Alla Gibilina">Alla Gibilina</option>';
+            toponimo_options_str  += '<option value="Alla Palazzetta">Alla Palazzetta</option>';
+            toponimo_options_str  += '<option value="Alla Pattona">Alla Pattona</option>';
+            toponimo_options_str  += '<option value="Alla Pelucca">Alla Pelucca</option>';
+            toponimo_options_str  += '<option value="Alla Plazzetta">Alla Plazzetta</option>';
+            toponimo_options_str  += '<option value="Alla Postale">Alla Postale</option>';
+            toponimo_options_str  += '<option value="Alla Roggia">Alla Roggia</option>';
+            toponimo_options_str  += '<option value="Alla Saresana">Alla Saresana</option>';
+            toponimo_options_str  += '<option value="Alla Strabosa">Alla Strabosa</option>';
+            toponimo_options_str  += '<option value="Alla Strada Ferrata">Alla Strada Ferrata</option>';
+            toponimo_options_str  += '<option value="Alla Strada del Colombajo">Alla Strada del Colombajo</option>';
+            toponimo_options_str  += '<option value="Alla Strada di Bosa">Alla Strada di Bosa</option>';
+            toponimo_options_str  += '<option value="Alla Strada di Concorezzo">Alla Strada di Concorezzo</option>';
+            toponimo_options_str  += '<option value="Alla Strada di Lecco">Alla Strada di Lecco</option>';
+            toponimo_options_str  += '<option value="Alla Strada di Muggiò">Alla Strada di Muggiò</option>';
+            toponimo_options_str  += '<option value="Alla Strada ferrata">Alla Strada ferrata</option>';
+            toponimo_options_str  += '<option value="Alla Stradella">Alla Stradella</option>';
+            toponimo_options_str  += '<option value="Alla Taccona">Alla Taccona</option>';
+            toponimo_options_str  += '<option value="Alla Tribionina">Alla Tribionina</option>';
+            toponimo_options_str  += '<option value="Alla Zucca">Alla Zucca</option>';
+            toponimo_options_str  += '<option value="Alla Zucchetta">Alla Zucchetta</option>';
+            toponimo_options_str  += '<option value="Alla baldassara">Alla baldassara</option>';
+            toponimo_options_str  += '<option value="Alla cassina">Alla cassina</option>';
+            toponimo_options_str  += '<option value="Alla cassina Ceruti">Alla cassina Ceruti</option>';
+            toponimo_options_str  += '<option value="Alla cassina Villa">Alla cassina Villa</option>';
+            toponimo_options_str  += '<option value="Alla cavrigola Prima">Alla cavrigola Prima</option>';
+            toponimo_options_str  += '<option value="Alla delfina">Alla delfina</option>';
+            toponimo_options_str  += '<option value="Alla fornace">Alla fornace</option>';
+            toponimo_options_str  += '<option value="Alla mazzola">Alla mazzola</option>';
+            toponimo_options_str  += '<option value="Alle Cassine Bovati">Alle Cassine Bovati</option>';
+            toponimo_options_str  += '<option value="Alle Cassine Caprotti">Alle Cassine Caprotti</option>';
+            toponimo_options_str  += '<option value="Alle Cassine De Bastoni">Alle Cassine De Bastoni</option>';
+            toponimo_options_str  += '<option value="Alle Vigne">Alle Vigne</option>';
+            toponimo_options_str  += '<option value="Alle cassine Bovati">Alle cassine Bovati</option>';
+            toponimo_options_str  += '<option value="Alle vigne">Alle vigne</option>';
+            toponimo_options_str  += '<option value="Aloni">Aloni</option>';
+            toponimo_options_str  += '<option value="Aquilone">Aquilone</option>';
+            toponimo_options_str  += '<option value="Aquiloni">Aquiloni</option>';
+            toponimo_options_str  += '<option value="Badia di sopra">Badia di sopra</option>';
+            toponimo_options_str  += '<option value="Badia di sotto">Badia di sotto</option>';
+            toponimo_options_str  += '<option value="Badie">Badie</option>';
+            toponimo_options_str  += '<option value="Badile">Badile</option>';
+            toponimo_options_str  += '<option value="Balossa">Balossa</option>';
+            toponimo_options_str  += '<option value="Barbona">Barbona</option>';
+            toponimo_options_str  += '<option value="Barigella">Barigella</option>';
+            toponimo_options_str  += '<option value="Benaja">Benaja</option>';
+            toponimo_options_str  += '<option value="Birona">Birona</option>';
+            toponimo_options_str  += '<option value="Birona a Tramontana">Birona a Tramontana</option>';
+            toponimo_options_str  += '<option value="Bironcina">Bironcina</option>';
+            toponimo_options_str  += '<option value="Birone a Tramontana">Birone a Tramontana</option>';
+            toponimo_options_str  += '<option value="Bironga">Bironga</option>';
+            toponimo_options_str  += '<option value="Borghetto">Borghetto</option>';
+            toponimo_options_str  += '<option value="Borgo S. Gerardo">Borgo S. Gerardo</option>';
+            toponimo_options_str  += '<option value="Borgo de&apos; Gradi">Borgo de&apos; Gradi</option>';
+            toponimo_options_str  += '<option value="Borgo de&apos;Gradi">Borgo de&apos;Gradi</option>';
+            toponimo_options_str  += '<option value="Borgo de&apos;Gradi e Strada del Santo Sirolo">Borgo de&apos;Gradi e Strada del Santo Sirolo</option>';
+            toponimo_options_str  += '<option value="Borgo di Carrobiolo">Borgo di Carrobiolo</option>';
+            toponimo_options_str  += '<option value="Borgo di Porta Milano">Borgo di Porta Milano</option>';
+            toponimo_options_str  += '<option value="Borgo di S. Biagio">Borgo di S. Biagio</option>';
+            toponimo_options_str  += '<option value="Borgo di S. Gerardo">Borgo di S. Gerardo</option>';
+            toponimo_options_str  += '<option value="Borgo di S. gerardo">Borgo di S. gerardo</option>';
+            toponimo_options_str  += '<option value="Borgo di carrobiolo">Borgo di carrobiolo</option>';
+            toponimo_options_str  += '<option value="Boschetta">Boschetta</option>';
+            toponimo_options_str  += '<option value="Boschetto">Boschetto</option>';
+            toponimo_options_str  += '<option value="Boschetto secondo">Boschetto secondo</option>';
+            toponimo_options_str  += '<option value="Boschi alla Cappelletta">Boschi alla Cappelletta</option>';
+            toponimo_options_str  += '<option value="Boschi del Deserto">Boschi del Deserto</option>';
+            toponimo_options_str  += '<option value="Boschina">Boschina</option>';
+            toponimo_options_str  += '<option value="Bosco">Bosco</option>';
+            toponimo_options_str  += '<option value="Bosco dei Ladri">Bosco dei Ladri</option>';
+            toponimo_options_str  += '<option value="Bosco del Quadro lungo">Bosco del Quadro lungo</option>';
+            toponimo_options_str  += '<option value="Bosco del Quadro mezzano">Bosco del Quadro mezzano</option>';
+            toponimo_options_str  += '<option value="Bosco della Cappelletta">Bosco della Cappelletta</option>';
+            toponimo_options_str  += '<option value="Bosco della Fontana Busca">Bosco della Fontana Busca</option>';
+            toponimo_options_str  += '<option value="Bosco della Novella">Bosco della Novella</option>';
+            toponimo_options_str  += '<option value="Bressanella">Bressanella</option>';
+            toponimo_options_str  += '<option value="Brianzola">Brianzola</option>';
+            toponimo_options_str  += '<option value="Broletto">Broletto</option>';
+            toponimo_options_str  += '<option value="Brolo">Brolo</option>';
+            toponimo_options_str  += '<option value="Brughiera">Brughiera</option>';
+            toponimo_options_str  += '<option value="Brughiera di sopra">Brughiera di sopra</option>';
+            toponimo_options_str  += '<option value="Brugnetta">Brugnetta</option>';
+            toponimo_options_str  += '<option value="Brugnetti">Brugnetti</option>';
+            toponimo_options_str  += '<option value="Buffiro">Buffiro</option>';
+            toponimo_options_str  += '<option value="Caldirera">Caldirera</option>';
+            toponimo_options_str  += '<option value="Campaccio">Campaccio</option>';
+            toponimo_options_str  += '<option value="Campagna">Campagna</option>';
+            toponimo_options_str  += '<option value="Campagna Boltrafica">Campagna Boltrafica</option>';
+            toponimo_options_str  += '<option value="Campagna Bonfanta">Campagna Bonfanta</option>';
+            toponimo_options_str  += '<option value="Campagna Boschetta">Campagna Boschetta</option>';
+            toponimo_options_str  += '<option value="Campagna Cantalupo">Campagna Cantalupo</option>';
+            toponimo_options_str  += '<option value="Campagna Cantalupo quinto">Campagna Cantalupo quinto</option>';
+            toponimo_options_str  += '<option value="Campagna Cattabrega">Campagna Cattabrega</option>';
+            toponimo_options_str  += '<option value="Campagna Colombajo Melzi">Campagna Colombajo Melzi</option>';
+            toponimo_options_str  += '<option value="Campagna Cova">Campagna Cova</option>';
+            toponimo_options_str  += '<option value="Campagna Fabbrizza">Campagna Fabbrizza</option>';
+            toponimo_options_str  += '<option value="Campagna Lecchi">Campagna Lecchi</option>';
+            toponimo_options_str  += '<option value="Campagna Pencia">Campagna Pencia</option>';
+            toponimo_options_str  += '<option value="Campagna Ronco">Campagna Ronco</option>';
+            toponimo_options_str  += '<option value="Campagna S. Giacomo">Campagna S. Giacomo</option>';
+            toponimo_options_str  += '<option value="Campagna S.Maria Prima">Campagna S.Maria Prima</option>';
+            toponimo_options_str  += '<option value="Campagna Trezza">Campagna Trezza</option>';
+            toponimo_options_str  += '<option value="Campagna Valosa">Campagna Valosa</option>';
+            toponimo_options_str  += '<option value="Campagna dei Bovati">Campagna dei Bovati</option>';
+            toponimo_options_str  += '<option value="Campagna del Cassignolo">Campagna del Cassignolo</option>';
+            toponimo_options_str  += '<option value="Campagna del Castello">Campagna del Castello</option>';
+            toponimo_options_str  += '<option value="Campagna del bosco">Campagna del bosco</option>';
+            toponimo_options_str  += '<option value="Campagna della Palazzetta">Campagna della Palazzetta</option>';
+            toponimo_options_str  += '<option value="Campagna di Cassignolo">Campagna di Cassignolo</option>';
+            toponimo_options_str  += '<option value="Campagna di sotto">Campagna di sotto</option>';
+            toponimo_options_str  += '<option value="Campagna lunga">Campagna lunga</option>';
+            toponimo_options_str  += '<option value="Campagna novella">Campagna novella</option>';
+            toponimo_options_str  += '<option value="Campagne">Campagne</option>';
+            toponimo_options_str  += '<option value="Campagnola">Campagnola</option>';
+            toponimo_options_str  += '<option value="Campagnola Trezza">Campagnola Trezza</option>';
+            toponimo_options_str  += '<option value="Campagnolo">Campagnolo</option>';
+            toponimo_options_str  += '<option value="Campagnolo alla strada ferrata">Campagnolo alla strada ferrata</option>';
+            toponimo_options_str  += '<option value="Campagnone">Campagnone</option>';
+            toponimo_options_str  += '<option value="Campello">Campello</option>';
+            toponimo_options_str  += '<option value="Campetto">Campetto</option>';
+            toponimo_options_str  += '<option value="Campetto al Cassignolo">Campetto al Cassignolo</option>';
+            toponimo_options_str  += '<option value="Campetto della Gallarana">Campetto della Gallarana</option>';
+            toponimo_options_str  += '<option value="Campi alla Cappelletta">Campi alla Cappelletta</option>';
+            toponimo_options_str  += '<option value="Campo Barigella">Campo Barigella</option>';
+            toponimo_options_str  += '<option value="Campo Delfina">Campo Delfina</option>';
+            toponimo_options_str  += '<option value="Campo Fornace">Campo Fornace</option>';
+            toponimo_options_str  += '<option value="Campo Gera">Campo Gera</option>';
+            toponimo_options_str  += '<option value="Campo Giardino">Campo Giardino</option>';
+            toponimo_options_str  += '<option value="Campo S. Maddalena">Campo S. Maddalena</option>';
+            toponimo_options_str  += '<option value="Campo S. Maria Prima">Campo S. Maria Prima</option>';
+            toponimo_options_str  += '<option value="Campo S. Maria Seconda">Campo S. Maria Seconda</option>';
+            toponimo_options_str  += '<option value="Campo al Castello">Campo al Castello</option>';
+            toponimo_options_str  += '<option value="Campo alla Delfina">Campo alla Delfina</option>';
+            toponimo_options_str  += '<option value="Campo avanti casa">Campo avanti casa</option>';
+            toponimo_options_str  += '<option value="Campo cova">Campo cova</option>';
+            toponimo_options_str  += '<option value="Campo dei Dossi">Campo dei Dossi</option>';
+            toponimo_options_str  += '<option value="Campo del ????????">Campo del ????????</option>';
+            toponimo_options_str  += '<option value="Campo della Cavallina">Campo della Cavallina</option>';
+            toponimo_options_str  += '<option value="Campo della Foppaccia">Campo della Foppaccia</option>';
+            toponimo_options_str  += '<option value="Campo della Gasparina">Campo della Gasparina</option>';
+            toponimo_options_str  += '<option value="Campo della Roggia">Campo della Roggia</option>';
+            toponimo_options_str  += '<option value="Campo delle Donne">Campo delle Donne</option>';
+            toponimo_options_str  += '<option value="Campo delle Galline">Campo delle Galline</option>';
+            toponimo_options_str  += '<option value="Campo di Casa">Campo di Casa</option>';
+            toponimo_options_str  += '<option value="Campo di casa">Campo di casa</option>';
+            toponimo_options_str  += '<option value="Canonica">Canonica</option>';
+            toponimo_options_str  += '<option value="Cantalupo">Cantalupo</option>';
+            toponimo_options_str  += '<option value="Casa e Porta del Serraglio">Casa e Porta del Serraglio</option>';
+            toponimo_options_str  += '<option value="Casalta Nuova">Casalta Nuova</option>';
+            toponimo_options_str  += '<option value="Casalta vecchia">Casalta vecchia</option>';
+            toponimo_options_str  += '<option value="Cassignolo">Cassignolo</option>';
+            toponimo_options_str  += '<option value="Cassina Abbazia S. Andrea">Cassina Abbazia S. Andrea</option>';
+            toponimo_options_str  += '<option value="Cassina Bacco">Cassina Bacco</option>';
+            toponimo_options_str  += '<option value="Cassina Bagatta">Cassina Bagatta</option>';
+            toponimo_options_str  += '<option value="Cassina Baldassare">Cassina Baldassare</option>';
+            toponimo_options_str  += '<option value="Cassina Ballotta">Cassina Ballotta</option>';
+            toponimo_options_str  += '<option value="Cassina Balosetta">Cassina Balosetta</option>';
+            toponimo_options_str  += '<option value="Cassina Balossa">Cassina Balossa</option>';
+            toponimo_options_str  += '<option value="Cassina Balossetta">Cassina Balossetta</option>';
+            toponimo_options_str  += '<option value="Cassina Barigella">Cassina Barigella</option>';
+            toponimo_options_str  += '<option value="Cassina Battistella">Cassina Battistella</option>';
+            toponimo_options_str  += '<option value="Cassina Bella">Cassina Bella</option>';
+            toponimo_options_str  += '<option value="Cassina Bettola">Cassina Bettola</option>';
+            toponimo_options_str  += '<option value="Cassina Bidaglia">Cassina Bidaglia</option>';
+            toponimo_options_str  += '<option value="Cassina Birona">Cassina Birona</option>';
+            toponimo_options_str  += '<option value="Cassina Bironcella">Cassina Bironcella</option>';
+            toponimo_options_str  += '<option value="Cassina Bironcina">Cassina Bironcina</option>';
+            toponimo_options_str  += '<option value="Cassina Bissona">Cassina Bissona</option>';
+            toponimo_options_str  += '<option value="Cassina Boldriga">Cassina Boldriga</option>';
+            toponimo_options_str  += '<option value="Cassina Bonfanta">Cassina Bonfanta</option>';
+            toponimo_options_str  += '<option value="Cassina Bonvino">Cassina Bonvino</option>';
+            toponimo_options_str  += '<option value="Cassina Boracchi">Cassina Boracchi</option>';
+            toponimo_options_str  += '<option value="Cassina Borgonovo">Cassina Borgonovo</option>';
+            toponimo_options_str  += '<option value="Cassina Bosa">Cassina Bosa</option>';
+            toponimo_options_str  += '<option value="Cassina Boscehtto Primo">Cassina Boscehtto Primo</option>';
+            toponimo_options_str  += '<option value="Cassina Boscherona">Cassina Boscherona</option>';
+            toponimo_options_str  += '<option value="Cassina Boschetto Secondo">Cassina Boschetto Secondo</option>';
+            toponimo_options_str  += '<option value="Cassina Boschetto primo">Cassina Boschetto primo</option>';
+            toponimo_options_str  += '<option value="Cassina Bressanella">Cassina Bressanella</option>';
+            toponimo_options_str  += '<option value="Cassina Brina">Cassina Brina</option>';
+            toponimo_options_str  += '<option value="Cassina Brinetta">Cassina Brinetta</option>';
+            toponimo_options_str  += '<option value="Cassina Cambiaga">Cassina Cambiaga</option>';
+            toponimo_options_str  += '<option value="Cassina Campaccio">Cassina Campaccio</option>';
+            toponimo_options_str  += '<option value="Cassina Campagna">Cassina Campagna</option>';
+            toponimo_options_str  += '<option value="Cassina Cantalupo Quarto">Cassina Cantalupo Quarto</option>';
+            toponimo_options_str  += '<option value="Cassina Cantalupo Quinto">Cassina Cantalupo Quinto</option>';
+            toponimo_options_str  += '<option value="Cassina Cantalupo Secondo">Cassina Cantalupo Secondo</option>';
+            toponimo_options_str  += '<option value="Cassina Cantalupo primo">Cassina Cantalupo primo</option>';
+            toponimo_options_str  += '<option value="Cassina Cappuccina">Cassina Cappuccina</option>';
+            toponimo_options_str  += '<option value="Cassina Casotto">Cassina Casotto</option>';
+            toponimo_options_str  += '<option value="Cassina Cassinazza">Cassina Cassinazza</option>';
+            toponimo_options_str  += '<option value="Cassina Castana">Cassina Castana</option>';
+            toponimo_options_str  += '<option value="Cassina Cattabriga">Cassina Cattabriga</option>';
+            toponimo_options_str  += '<option value="Cassina Cavrigola Prima">Cassina Cavrigola Prima</option>';
+            toponimo_options_str  += '<option value="Cassina Cavrigola Seconda">Cassina Cavrigola Seconda</option>';
+            toponimo_options_str  += '<option value="Cassina Ceruti">Cassina Ceruti</option>';
+            toponimo_options_str  += '<option value="Cassina Cerutti">Cassina Cerutti</option>';
+            toponimo_options_str  += '<option value="Cassina Colombaja">Cassina Colombaja</option>';
+            toponimo_options_str  += '<option value="Cassina Colombajo Melzi">Cassina Colombajo Melzi</option>';
+            toponimo_options_str  += '<option value="Cassina Colombajo Porchera">Cassina Colombajo Porchera</option>';
+            toponimo_options_str  += '<option value="Cassina Colombajo S. Donato">Cassina Colombajo S. Donato</option>';
+            toponimo_options_str  += '<option value="Cassina Colombajo al Rondò">Cassina Colombajo al Rondò</option>';
+            toponimo_options_str  += '<option value="Cassina Colombajo inferiore">Cassina Colombajo inferiore</option>';
+            toponimo_options_str  += '<option value="Cassina Colombajo superiore">Cassina Colombajo superiore</option>';
+            toponimo_options_str  += '<option value="Cassina Consolazione">Cassina Consolazione</option>';
+            toponimo_options_str  += '<option value="Cassina Costanzina">Cassina Costanzina</option>';
+            toponimo_options_str  += '<option value="Cassina Cova">Cassina Cova</option>';
+            toponimo_options_str  += '<option value="Cassina Criminale">Cassina Criminale</option>';
+            toponimo_options_str  += '<option value="Cassina Crippa">Cassina Crippa</option>';
+            toponimo_options_str  += '<option value="Cassina Crocefisso">Cassina Crocefisso</option>';
+            toponimo_options_str  += '<option value="Cassina Decapei">Cassina Decapei</option>';
+            toponimo_options_str  += '<option value="Cassina Delfina">Cassina Delfina</option>';
+            toponimo_options_str  += '<option value="Cassina Donnina">Cassina Donnina</option>';
+            toponimo_options_str  += '<option value="Cassina Dosso">Cassina Dosso</option>';
+            toponimo_options_str  += '<option value="Cassina Felice">Cassina Felice</option>';
+            toponimo_options_str  += '<option value="Cassina Finale">Cassina Finale</option>';
+            toponimo_options_str  += '<option value="Cassina Fornace">Cassina Fornace</option>';
+            toponimo_options_str  += '<option value="Cassina Fornace al Lambro">Cassina Fornace al Lambro</option>';
+            toponimo_options_str  += '<option value="Cassina Fornasetta">Cassina Fornasetta</option>';
+            toponimo_options_str  += '<option value="Cassina Fortuna">Cassina Fortuna</option>';
+            toponimo_options_str  += '<option value="Cassina Frapolli">Cassina Frapolli</option>';
+            toponimo_options_str  += '<option value="Cassina Frutteto">Cassina Frutteto</option>';
+            toponimo_options_str  += '<option value="Cassina Gallarana">Cassina Gallarana</option>';
+            toponimo_options_str  += '<option value="Cassina Gasparina">Cassina Gasparina</option>';
+            toponimo_options_str  += '<option value="Cassina Gera">Cassina Gera</option>';
+            toponimo_options_str  += '<option value="Cassina Gerone">Cassina Gerone</option>';
+            toponimo_options_str  += '<option value="Cassina Ghisova">Cassina Ghisova</option>';
+            toponimo_options_str  += '<option value="Cassina Giardino">Cassina Giardino</option>';
+            toponimo_options_str  += '<option value="Cassina Gibilina">Cassina Gibilina</option>';
+            toponimo_options_str  += '<option value="Cassina Grassa">Cassina Grassa</option>';
+            toponimo_options_str  += '<option value="Cassina Guerrina Prima">Cassina Guerrina Prima</option>';
+            toponimo_options_str  += '<option value="Cassina Guglielmina">Cassina Guglielmina</option>';
+            toponimo_options_str  += '<option value="Cassina Lecchi">Cassina Lecchi</option>';
+            toponimo_options_str  += '<option value="Cassina Lesmina">Cassina Lesmina</option>';
+            toponimo_options_str  += '<option value="Cassina Lucina">Cassina Lucina</option>';
+            toponimo_options_str  += '<option value="Cassina Masonera">Cassina Masonera</option>';
+            toponimo_options_str  += '<option value="Cassina Maura">Cassina Maura</option>';
+            toponimo_options_str  += '<option value="Cassina Merona">Cassina Merona</option>';
+            toponimo_options_str  += '<option value="Cassina Mirani">Cassina Mirani</option>';
+            toponimo_options_str  += '<option value="Cassina Novella">Cassina Novella</option>';
+            toponimo_options_str  += '<option value="Cassina Nuova">Cassina Nuova</option>';
+            toponimo_options_str  += '<option value="Cassina Offellina">Cassina Offellina</option>';
+            toponimo_options_str  += '<option value="Cassina Palazzetta">Cassina Palazzetta</option>';
+            toponimo_options_str  += '<option value="Cassina Palazzola">Cassina Palazzola</option>';
+            toponimo_options_str  += '<option value="Cassina Paleari">Cassina Paleari</option>';
+            toponimo_options_str  += '<option value="Cassina Pattona">Cassina Pattona</option>';
+            toponimo_options_str  += '<option value="Cassina Pensile">Cassina Pensile</option>';
+            toponimo_options_str  += '<option value="Cassina Peverazza">Cassina Peverazza</option>';
+            toponimo_options_str  += '<option value="Cassina Piazzetta">Cassina Piazzetta</option>';
+            toponimo_options_str  += '<option value="Cassina Piccozza">Cassina Piccozza</option>';
+            toponimo_options_str  += '<option value="Cassina Piotta">Cassina Piotta</option>';
+            toponimo_options_str  += '<option value="Cassina Porcellina">Cassina Porcellina</option>';
+            toponimo_options_str  += '<option value="Cassina Prati">Cassina Prati</option>';
+            toponimo_options_str  += '<option value="Cassina Rivè">Cassina Rivè</option>';
+            toponimo_options_str  += '<option value="Cassina Robasacco">Cassina Robasacco</option>';
+            toponimo_options_str  += '<option value="Cassina Ronco">Cassina Ronco</option>';
+            toponimo_options_str  += '<option value="Cassina Rondò">Cassina Rondò</option>';
+            toponimo_options_str  += '<option value="Cassina Ruggeri">Cassina Ruggeri</option>';
+            toponimo_options_str  += '<option value="Cassina S. Ambrogio">Cassina S. Ambrogio</option>';
+            toponimo_options_str  += '<option value="Cassina S. Andrea">Cassina S. Andrea</option>';
+            toponimo_options_str  += '<option value="Cassina S. Bernardo">Cassina S. Bernardo</option>';
+            toponimo_options_str  += '<option value="Cassina S. Carlo">Cassina S. Carlo</option>';
+            toponimo_options_str  += '<option value="Cassina S. Donarino">Cassina S. Donarino</option>';
+            toponimo_options_str  += '<option value="Cassina S. Donato">Cassina S. Donato</option>';
+            toponimo_options_str  += '<option value="Cassina S. Eurosia">Cassina S. Eurosia</option>';
+            toponimo_options_str  += '<option value="Cassina S. Gerardo">Cassina S. Gerardo</option>';
+            toponimo_options_str  += '<option value="Cassina S. Gerolamo">Cassina S. Gerolamo</option>';
+            toponimo_options_str  += '<option value="Cassina S. Giorgio">Cassina S. Giorgio</option>';
+            toponimo_options_str  += '<option value="Cassina S. Giovanni Battista">Cassina S. Giovanni Battista</option>';
+            toponimo_options_str  += '<option value="Cassina S. Giulio">Cassina S. Giulio</option>';
+            toponimo_options_str  += '<option value="Cassina S. Giuseppe">Cassina S. Giuseppe</option>';
+            toponimo_options_str  += '<option value="Cassina S. M. Seconda">Cassina S. M. Seconda</option>';
+            toponimo_options_str  += '<option value="Cassina S. Maddalena">Cassina S. Maddalena</option>';
+            toponimo_options_str  += '<option value="Cassina S. Maria Prima">Cassina S. Maria Prima</option>';
+            toponimo_options_str  += '<option value="Cassina S. Martino Papa">Cassina S. Martino Papa</option>';
+            toponimo_options_str  += '<option value="Cassina S. Martino Vescovo">Cassina S. Martino Vescovo</option>';
+            toponimo_options_str  += '<option value="Cassina S. Martino ai Cappuccini">Cassina S. Martino ai Cappuccini</option>';
+            toponimo_options_str  += '<option value="Cassina S. Orsola">Cassina S. Orsola</option>';
+            toponimo_options_str  += '<option value="Cassina S. Rocco">Cassina S. Rocco</option>';
+            toponimo_options_str  += '<option value="Cassina S. Rosa">Cassina S. Rosa</option>';
+            toponimo_options_str  += '<option value="Cassina S.Andrea">Cassina S.Andrea</option>';
+            toponimo_options_str  += '<option value="Cassina Sarezana">Cassina Sarezana</option>';
+            toponimo_options_str  += '<option value="Cassina Savina">Cassina Savina</option>';
+            toponimo_options_str  += '<option value="Cassina Scotti">Cassina Scotti</option>';
+            toponimo_options_str  += '<option value="Cassina Strabosa">Cassina Strabosa</option>';
+            toponimo_options_str  += '<option value="Cassina Traversagna">Cassina Traversagna</option>';
+            toponimo_options_str  += '<option value="Cassina Triante">Cassina Triante</option>';
+            toponimo_options_str  += '<option value="Cassina Tribionina">Cassina Tribionina</option>';
+            toponimo_options_str  += '<option value="Cassina Valasetta">Cassina Valasetta</option>';
+            toponimo_options_str  += '<option value="Cassina Vallassetta">Cassina Vallassetta</option>';
+            toponimo_options_str  += '<option value="Cassina Vallere">Cassina Vallere</option>';
+            toponimo_options_str  += '<option value="Cassina Valletta">Cassina Valletta</option>';
+            toponimo_options_str  += '<option value="Cassina Valsasnina Seconda">Cassina Valsasnina Seconda</option>';
+            toponimo_options_str  += '<option value="Cassina Varenna">Cassina Varenna</option>';
+            toponimo_options_str  += '<option value="Cassina Vaslasnina Prima">Cassina Vaslasnina Prima</option>';
+            toponimo_options_str  += '<option value="Cassina Vignazza">Cassina Vignazza</option>';
+            toponimo_options_str  += '<option value="Cassina Vignetta">Cassina Vignetta</option>';
+            toponimo_options_str  += '<option value="Cassina Villa">Cassina Villa</option>';
+            toponimo_options_str  += '<option value="Cassina Villova">Cassina Villova</option>';
+            toponimo_options_str  += '<option value="Cassina Volpina">Cassina Volpina</option>';
+            toponimo_options_str  += '<option value="Cassina Zucca">Cassina Zucca</option>';
+            toponimo_options_str  += '<option value="Cassina Zucchetta">Cassina Zucchetta</option>';
+            toponimo_options_str  += '<option value="Cassina cantalupo terzo">Cassina cantalupo terzo</option>';
+            toponimo_options_str  += '<option value="Cassina de&apos;Merli">Cassina de&apos;Merli</option>';
+            toponimo_options_str  += '<option value="Cassina degli Angeli">Cassina degli Angeli</option>';
+            toponimo_options_str  += '<option value="Cassina degli Angioli">Cassina degli Angioli</option>';
+            toponimo_options_str  += '<option value="Cassina dei Bastoni">Cassina dei Bastoni</option>';
+            toponimo_options_str  += '<option value="Cassina del Carmine">Cassina del Carmine</option>';
+            toponimo_options_str  += '<option value="Cassina del Rosario">Cassina del Rosario</option>';
+            toponimo_options_str  += '<option value="Cassina delle Api">Cassina delle Api</option>';
+            toponimo_options_str  += '<option value="Cassina delle Grazie">Cassina delle Grazie</option>';
+            toponimo_options_str  += '<option value="Cassina delle Monzache">Cassina delle Monzache</option>';
+            toponimo_options_str  += '<option value="Cassina delle Oche">Cassina delle Oche</option>';
+            toponimo_options_str  += '<option value="Cassina delle Ossa">Cassina delle Ossa</option>';
+            toponimo_options_str  += '<option value="Cassina delle Quaglie">Cassina delle Quaglie</option>';
+            toponimo_options_str  += '<option value="Cassina delle Vigne">Cassina delle Vigne</option>';
+            toponimo_options_str  += '<option value="Cassina gerrina Seconda">Cassina gerrina Seconda</option>';
+            toponimo_options_str  += '<option value="Cassina novella">Cassina novella</option>';
+            toponimo_options_str  += '<option value="Cassina triante">Cassina triante</option>';
+            toponimo_options_str  += '<option value="Cassine Bovati">Cassine Bovati</option>';
+            toponimo_options_str  += '<option value="Cassine Caprotti">Cassine Caprotti</option>';
+            toponimo_options_str  += '<option value="Cassine De Bastoni">Cassine De Bastoni</option>';
+            toponimo_options_str  += '<option value="Cassine De Bastoni = Piazza della Madonna">Cassine De Bastoni = Piazza della Madonna</option>';
+            toponimo_options_str  += '<option value="Cassine De Bastoni=Piazza della Madonna">Cassine De Bastoni=Piazza della Madonna</option>';
+            toponimo_options_str  += '<option value="Cassine caprotti">Cassine caprotti</option>';
+            toponimo_options_str  += '<option value="Cassine de Bastoni">Cassine de Bastoni</option>';
+            toponimo_options_str  += '<option value="Cassine dei Bastoni">Cassine dei Bastoni</option>';
+            toponimo_options_str  += '<option value="Cattabrega">Cattabrega</option>';
+            toponimo_options_str  += '<option value="Chiesa S. Rocco">Chiesa S. Rocco</option>';
+            toponimo_options_str  += '<option value="Chiesa di S. Gerardo">Chiesa di S. Gerardo</option>';
+            toponimo_options_str  += '<option value="Chiesa di S. Maria in Carrobiolo">Chiesa di S. Maria in Carrobiolo</option>';
+            toponimo_options_str  += '<option value="Chiesa di S. Maurizio">Chiesa di S. Maurizio</option>';
+            toponimo_options_str  += '<option value="Chiesa parrocchiale Borgo di S. Biagio">Chiesa parrocchiale Borgo di S. Biagio</option>';
+            toponimo_options_str  += '<option value="Chioso">Chioso</option>';
+            toponimo_options_str  += '<option value="Chioso a Ponente">Chioso a Ponente</option>';
+            toponimo_options_str  += '<option value="Chioso di Casa">Chioso di Casa</option>';
+            toponimo_options_str  += '<option value="Chioso di S. Lorenzo">Chioso di S. Lorenzo</option>';
+            toponimo_options_str  += '<option value="Chioso di casa">Chioso di casa</option>';
+            toponimo_options_str  += '<option value="Chiozzi">Chiozzi</option>';
+            toponimo_options_str  += '<option value="Chiozzo">Chiozzo</option>';
+            toponimo_options_str  += '<option value="Cimitero S. Gerardo">Cimitero S. Gerardo</option>';
+            toponimo_options_str  += '<option value="Cimitero contrada del Lambro">Cimitero contrada del Lambro</option>';
+            toponimo_options_str  += '<option value="Cinque fili">Cinque fili</option>';
+            toponimo_options_str  += '<option value="Colombajo ai Cappuccini">Colombajo ai Cappuccini</option>';
+            toponimo_options_str  += '<option value="Colombina">Colombina</option>';
+            toponimo_options_str  += '<option value="Contrada Augusta">Contrada Augusta</option>';
+            toponimo_options_str  += '<option value="Contrada Corte Longa">Contrada Corte Longa</option>';
+            toponimo_options_str  += '<option value="Contrada Ferdinandea">Contrada Ferdinandea</option>';
+            toponimo_options_str  += '<option value="Contrada Imperiale">Contrada Imperiale</option>';
+            toponimo_options_str  += '<option value="Contrada Novara">Contrada Novara</option>';
+            toponimo_options_str  += '<option value="Contrada Ogni Santo">Contrada Ogni Santo</option>';
+            toponimo_options_str  += '<option value="Contrada S. Agata">Contrada S. Agata</option>';
+            toponimo_options_str  += '<option value="Contrada S. Andrea">Contrada S. Andrea</option>';
+            toponimo_options_str  += '<option value="Contrada S. Gerardo">Contrada S. Gerardo</option>';
+            toponimo_options_str  += '<option value="Contrada S. Giuseppe">Contrada S. Giuseppe</option>';
+            toponimo_options_str  += '<option value="Contrada S. Ignazio">Contrada S. Ignazio</option>';
+            toponimo_options_str  += '<option value="Contrada S. Maria degli Angeli">Contrada S. Maria degli Angeli</option>';
+            toponimo_options_str  += '<option value="Contrada S. Maria in Istrada">Contrada S. Maria in Istrada</option>';
+            toponimo_options_str  += '<option value="Contrada S. Martino">Contrada S. Martino</option>';
+            toponimo_options_str  += '<option value="Contrada S. Maurizio">Contrada S. Maurizio</option>';
+            toponimo_options_str  += '<option value="Contrada S. Maurizio e de&apos;Gradi">Contrada S. Maurizio e de&apos;Gradi</option>';
+            toponimo_options_str  += '<option value="Contrada S. Orsola">Contrada S. Orsola</option>';
+            toponimo_options_str  += '<option value="Contrada S. Paolo">Contrada S. Paolo</option>';
+            toponimo_options_str  += '<option value="Contrada S.Maurizio">Contrada S.Maurizio</option>';
+            toponimo_options_str  += '<option value="Contrada S: Agata">Contrada S: Agata</option>';
+            toponimo_options_str  += '<option value="Contrada S: Orsola">Contrada S: Orsola</option>';
+            toponimo_options_str  += '<option value="Contrada d&apos;Arena">Contrada d&apos;Arena</option>';
+            toponimo_options_str  += '<option value="Contrada d&apos;Arena e Vicolo delle Case rotte">Contrada d&apos;Arena e Vicolo delle Case rotte</option>';
+            toponimo_options_str  += '<option value="Contrada d&apos;Arena e di S. Maurizio">Contrada d&apos;Arena e di S. Maurizio</option>';
+            toponimo_options_str  += '<option value="Contrada d&apos;Avena">Contrada d&apos;Avena</option>';
+            toponimo_options_str  += '<option value="Contrada de&apos; Gradi">Contrada de&apos; Gradi</option>';
+            toponimo_options_str  += '<option value="Contrada de&apos; Gradi e Terraggio di Porta Lodi">Contrada de&apos; Gradi e Terraggio di Porta Lodi</option>';
+            toponimo_options_str  += '<option value="Contrada de&apos;Gradi">Contrada de&apos;Gradi</option>';
+            toponimo_options_str  += '<option value="Contrada de&apos;Merli">Contrada de&apos;Merli</option>';
+            toponimo_options_str  += '<option value="Contrada del Borghetto">Contrada del Borghetto</option>';
+            toponimo_options_str  += '<option value="Contrada del Collegio">Contrada del Collegio</option>';
+            toponimo_options_str  += '<option value="Contrada del Comune">Contrada del Comune</option>';
+            toponimo_options_str  += '<option value="Contrada del Comune e Vicolo di S. Martire">Contrada del Comune e Vicolo di S. Martire</option>';
+            toponimo_options_str  += '<option value="Contrada del Crocefisso">Contrada del Crocefisso</option>';
+            toponimo_options_str  += '<option value="Contrada del Dazio di S. Biagio">Contrada del Dazio di S. Biagio</option>';
+            toponimo_options_str  += '<option value="Contrada del Lambro">Contrada del Lambro</option>';
+            toponimo_options_str  += '<option value="Contrada del Monte di Pietà">Contrada del Monte di Pietà</option>';
+            toponimo_options_str  += '<option value="Contrada del Ponte di Lecco">Contrada del Ponte di Lecco</option>';
+            toponimo_options_str  += '<option value="Contrada del Pretorio">Contrada del Pretorio</option>';
+            toponimo_options_str  += '<option value="Contrada del Santo Sirolo">Contrada del Santo Sirolo</option>';
+            toponimo_options_str  += '<option value="Contrada del Seminario">Contrada del Seminario</option>';
+            toponimo_options_str  += '<option value="Contrada del crocefisso">Contrada del crocefisso</option>';
+            toponimo_options_str  += '<option value="Contrada del dazio di S. Biagio">Contrada del dazio di S. Biagio</option>';
+            toponimo_options_str  += '<option value="Contrada del pretorio">Contrada del pretorio</option>';
+            toponimo_options_str  += '<option value="Contrada dell&apos;Ospitale">Contrada dell&apos;Ospitale</option>';
+            toponimo_options_str  += '<option value="Contrada dell&apos;Ospitale vecchio">Contrada dell&apos;Ospitale vecchio</option>';
+            toponimo_options_str  += '<option value="Contrada della Pesa del Lino">Contrada della Pesa del Lino</option>';
+            toponimo_options_str  += '<option value="Contrada della Posta">Contrada della Posta</option>';
+            toponimo_options_str  += '<option value="Contrada della Posta Vecchia">Contrada della Posta Vecchia</option>';
+            toponimo_options_str  += '<option value="Contrada di Carrobiolo">Contrada di Carrobiolo</option>';
+            toponimo_options_str  += '<option value="Contrada di Corte Longa">Contrada di Corte Longa</option>';
+            toponimo_options_str  += '<option value="Contrada di Cortelonga">Contrada di Cortelonga</option>';
+            toponimo_options_str  += '<option value="Contrada di Porta Lodi">Contrada di Porta Lodi</option>';
+            toponimo_options_str  += '<option value="Contrada di S, Pietro Martire">Contrada di S, Pietro Martire</option>';
+            toponimo_options_str  += '<option value="Contrada di S. Andrea">Contrada di S. Andrea</option>';
+            toponimo_options_str  += '<option value="Contrada di S. Croce">Contrada di S. Croce</option>';
+            toponimo_options_str  += '<option value="Contrada di S. Elisabetta">Contrada di S. Elisabetta</option>';
+            toponimo_options_str  += '<option value="Contrada di S. Giuseppe">Contrada di S. Giuseppe</option>';
+            toponimo_options_str  += '<option value="Contrada di S. Maddalena">Contrada di S. Maddalena</option>';
+            toponimo_options_str  += '<option value="Contrada di S. Margherita">Contrada di S. Margherita</option>';
+            toponimo_options_str  += '<option value="Contrada di S. Maria degli Angeli">Contrada di S. Maria degli Angeli</option>';
+            toponimo_options_str  += '<option value="Contrada di S. Maria degli Angioli">Contrada di S. Maria degli Angioli</option>';
+            toponimo_options_str  += '<option value="Contrada di S. Maria in Istrada">Contrada di S. Maria in Istrada</option>';
+            toponimo_options_str  += '<option value="Contrada di S. Martino">Contrada di S. Martino</option>';
+            toponimo_options_str  += '<option value="Contrada di S. Maurizio">Contrada di S. Maurizio</option>';
+            toponimo_options_str  += '<option value="Contrada di S. Paolo">Contrada di S. Paolo</option>';
+            toponimo_options_str  += '<option value="Contrada di S. Pietro">Contrada di S. Pietro</option>';
+            toponimo_options_str  += '<option value="Contrada di S. Pietro Martire">Contrada di S. Pietro Martire</option>';
+            toponimo_options_str  += '<option value="Contrada di S. paolo">Contrada di S. paolo</option>';
+            toponimo_options_str  += '<option value="Contrada di corte Longa">Contrada di corte Longa</option>';
+            toponimo_options_str  += '<option value="Contrada di cortelonga">Contrada di cortelonga</option>';
+            toponimo_options_str  += '<option value="Contrada e Piazza Augusta">Contrada e Piazza Augusta</option>';
+            toponimo_options_str  += '<option value="Contrada e Piazza Ferdinandea">Contrada e Piazza Ferdinandea</option>';
+            toponimo_options_str  += '<option value="Contrada e Piazza di Carrobiolo">Contrada e Piazza di Carrobiolo</option>';
+            toponimo_options_str  += '<option value="Contrada e Piazza di S. Maria in Istrada, Contrada della pubblica Pesa e Contrada di S. Andrea">Contrada e Piazza di S. Maria in Istrada, Contrada della pubblica Pesa e Contrada di S. Andrea</option>';
+            toponimo_options_str  += '<option value="Contrada e Piazza di S. Pietro Martire">Contrada e Piazza di S. Pietro Martire</option>';
+            toponimo_options_str  += '<option value="Contrada e Piazza di S. paolo">Contrada e Piazza di S. paolo</option>';
+            toponimo_options_str  += '<option value="Contrada e Stretta di S. Ignazio">Contrada e Stretta di S. Ignazio</option>';
+            toponimo_options_str  += '<option value="Contrada e Terraggio di Porta Lodi">Contrada e Terraggio di Porta Lodi</option>';
+            toponimo_options_str  += '<option value="Contrada e Vicolo S. Ignazio">Contrada e Vicolo S. Ignazio</option>';
+            toponimo_options_str  += '<option value="Contrada nuova">Contrada nuova</option>';
+            toponimo_options_str  += '<option value="Contrada ogni Santo">Contrada ogni Santo</option>';
+            toponimo_options_str  += '<option value="Corsia di Porta Milano">Corsia di Porta Milano</option>';
+            toponimo_options_str  += '<option value="Corsia di Porta nuova">Corsia di Porta nuova</option>';
+            toponimo_options_str  += '<option value="Corsia di porta Milano">Corsia di porta Milano</option>';
+            toponimo_options_str  += '<option value="Corsia di porta nuova">Corsia di porta nuova</option>';
+            toponimo_options_str  += '<option value="Corsia e Terraggio di Porta Milano">Corsia e Terraggio di Porta Milano</option>';
+            toponimo_options_str  += '<option value="Costeva">Costeva</option>';
+            toponimo_options_str  += '<option value="Criminale">Criminale</option>';
+            toponimo_options_str  += '<option value="Dazio di Porta de&apos;Gradi">Dazio di Porta de&apos;Gradi</option>';
+            toponimo_options_str  += '<option value="Dosso">Dosso</option>';
+            toponimo_options_str  += '<option value="Dosso di sopra">Dosso di sopra</option>';
+            toponimo_options_str  += '<option value="Dosso di sotto">Dosso di sotto</option>';
+            toponimo_options_str  += '<option value="Ferlongo">Ferlongo</option>';
+            toponimo_options_str  += '<option value="Filetto">Filetto</option>';
+            toponimo_options_str  += '<option value="Fondo del roccolo">Fondo del roccolo</option>';
+            toponimo_options_str  += '<option value="Fornace">Fornace</option>';
+            toponimo_options_str  += '<option value="Fra le roggie">Fra le roggie</option>';
+            toponimo_options_str  += '<option value="Gallarana">Gallarana</option>';
+            toponimo_options_str  += '<option value="Gallarana di sopra">Gallarana di sopra</option>';
+            toponimo_options_str  += '<option value="Gallarana di sotto">Gallarana di sotto</option>';
+            toponimo_options_str  += '<option value="Gasletto">Gasletto</option>';
+            toponimo_options_str  += '<option value="Gazometro">Gazometro</option>';
+            toponimo_options_str  += '<option value="Gera">Gera</option>';
+            toponimo_options_str  += '<option value="Grazie vecchie">Grazie vecchie</option>';
+            toponimo_options_str  += '<option value="Gualtera">Gualtera</option>';
+            toponimo_options_str  += '<option value="Gualtera di sopra">Gualtera di sopra</option>';
+            toponimo_options_str  += '<option value="Gualtera di sotto">Gualtera di sotto</option>';
+            toponimo_options_str  += '<option value="I Pianetti">I Pianetti</option>';
+            toponimo_options_str  += '<option value="I Quadretti">I Quadretti</option>';
+            toponimo_options_str  += '<option value="I quadretti">I quadretti</option>';
+            toponimo_options_str  += '<option value="I. R. Parco">I. R. Parco</option>';
+            toponimo_options_str  += '<option value="I. R. Villa">I. R. Villa</option>';
+            toponimo_options_str  += '<option value="Il Chioso">Il Chioso</option>';
+            toponimo_options_str  += '<option value="Il Deserto">Il Deserto</option>';
+            toponimo_options_str  += '<option value="Il Quadro">Il Quadro</option>';
+            toponimo_options_str  += '<option value="Il Vignolo">Il Vignolo</option>';
+            toponimo_options_str  += '<option value="Il triangolo">Il triangolo</option>';
+            toponimo_options_str  += '<option value="Isolino">Isolino</option>';
+            toponimo_options_str  += '<option value="L&apos;Ortaglia">L&apos;Ortaglia</option>';
+            toponimo_options_str  += '<option value="L&apos;Orto">L&apos;Orto</option>';
+            toponimo_options_str  += '<option value="La Boschina">La Boschina</option>';
+            toponimo_options_str  += '<option value="La Punta">La Punta</option>';
+            toponimo_options_str  += '<option value="La Valle">La Valle</option>';
+            toponimo_options_str  += '<option value="La Vigna">La Vigna</option>';
+            toponimo_options_str  += '<option value="La Vignetta">La Vignetta</option>';
+            toponimo_options_str  += '<option value="La foppa della vigna di S. Biagio">La foppa della vigna di S. Biagio</option>';
+            toponimo_options_str  += '<option value="La vigna">La vigna</option>';
+            toponimo_options_str  += '<option value="La vignetta">La vignetta</option>';
+            toponimo_options_str  += '<option value="La vignola">La vignola</option>';
+            toponimo_options_str  += '<option value="Labutturno">Labutturno</option>';
+            toponimo_options_str  += '<option value="Lambico">Lambico</option>';
+            toponimo_options_str  += '<option value="Le Piane">Le Piane</option>';
+            toponimo_options_str  += '<option value="Le Varese">Le Varese</option>';
+            toponimo_options_str  += '<option value="Lesmino">Lesmino</option>';
+            toponimo_options_str  += '<option value="Luogo di casa">Luogo di casa</option>';
+            toponimo_options_str  += '<option value="Luogo grande di casa">Luogo grande di casa</option>';
+            toponimo_options_str  += '<option value="Madonna della Muraglia">Madonna della Muraglia</option>';
+            toponimo_options_str  += '<option value="Magazzino del Forno">Magazzino del Forno</option>';
+            toponimo_options_str  += '<option value="Maino">Maino</option>';
+            toponimo_options_str  += '<option value="Merona">Merona</option>';
+            toponimo_options_str  += '<option value="Milini di S. Giovanni Battista">Milini di S. Giovanni Battista</option>';
+            toponimo_options_str  += '<option value="Mirabello">Mirabello</option>';
+            toponimo_options_str  += '<option value="Molinetto">Molinetto</option>';
+            toponimo_options_str  += '<option value="Molini delle Grazie">Molini delle Grazie</option>';
+            toponimo_options_str  += '<option value="Molino Caccia">Molino Caccia</option>';
+            toponimo_options_str  += '<option value="Monache di S. Apollinare">Monache di S. Apollinare</option>';
+            toponimo_options_str  += '<option value="Monache di S.Apollinare">Monache di S.Apollinare</option>';
+            toponimo_options_str  += '<option value="Montagnetta">Montagnetta</option>';
+            toponimo_options_str  += '<option value="Montagnette">Montagnette</option>';
+            toponimo_options_str  += '<option value="Monticello">Monticello</option>';
+            toponimo_options_str  += '<option value="Mulini del Castello">Mulini del Castello</option>';
+            toponimo_options_str  += '<option value="Mulini delle Grazie">Mulini delle Grazie</option>';
+            toponimo_options_str  += '<option value="Mulini di S. Giovanni Battista">Mulini di S. Giovanni Battista</option>';
+            toponimo_options_str  += '<option value="Mulini di San Giovanni Battista">Mulini di San Giovanni Battista</option>';
+            toponimo_options_str  += '<option value="Mulino Mambretti">Mulino Mambretti</option>';
+            toponimo_options_str  += '<option value="Mulino S. Vittore">Mulino S. Vittore</option>';
+            toponimo_options_str  += '<option value="Mulino di S. Lorenzo">Mulino di S. Lorenzo</option>';
+            toponimo_options_str  += '<option value="Mulino di S. lorenzo">Mulino di S. lorenzo</option>';
+            toponimo_options_str  += '<option value="Mulino di s. Lorenzo">Mulino di s. Lorenzo</option>';
+            toponimo_options_str  += '<option value="Mussa">Mussa</option>';
+            toponimo_options_str  += '<option value="Novella">Novella</option>';
+            toponimo_options_str  += '<option value="Novella e Brugnetta">Novella e Brugnetta</option>';
+            toponimo_options_str  += '<option value="Novelletta di sotto">Novelletta di sotto</option>';
+            toponimo_options_str  += '<option value="Oratorio Vicolo di Carrobiolo">Oratorio Vicolo di Carrobiolo</option>';
+            toponimo_options_str  += '<option value="Oratorio della Regia Villa">Oratorio della Regia Villa</option>';
+            toponimo_options_str  += '<option value="Palazzola">Palazzola</option>';
+            toponimo_options_str  += '<option value="Peverazza">Peverazza</option>';
+            toponimo_options_str  += '<option value="Piazza Augusta">Piazza Augusta</option>';
+            toponimo_options_str  += '<option value="Piazza Augusta e Stradone di Vedano">Piazza Augusta e Stradone di Vedano</option>';
+            toponimo_options_str  += '<option value="Piazza Isola">Piazza Isola</option>';
+            toponimo_options_str  += '<option value="Piazza S. Agata">Piazza S. Agata</option>';
+            toponimo_options_str  += '<option value="Piazza S. Michele">Piazza S. Michele</option>';
+            toponimo_options_str  += '<option value="Piazza S. michele">Piazza S. michele</option>';
+            toponimo_options_str  += '<option value="Piazza del Duomo">Piazza del Duomo</option>';
+            toponimo_options_str  += '<option value="Piazza del Mercato">Piazza del Mercato</option>';
+            toponimo_options_str  += '<option value="Piazza del Verzaro">Piazza del Verzaro</option>';
+            toponimo_options_str  += '<option value="Piazza del mercato">Piazza del mercato</option>';
+            toponimo_options_str  += '<option value="Piazza del verzaro">Piazza del verzaro</option>';
+            toponimo_options_str  += '<option value="Piazza della Pesa del Lino e Borgo de&apos;Gradi">Piazza della Pesa del Lino e Borgo de&apos;Gradi</option>';
+            toponimo_options_str  += '<option value="Piazza di Carrobiolo">Piazza di Carrobiolo</option>';
+            toponimo_options_str  += '<option value="Piazza di S. Agata">Piazza di S. Agata</option>';
+            toponimo_options_str  += '<option value="Piazza di S. Maria degli Angioli">Piazza di S. Maria degli Angioli</option>';
+            toponimo_options_str  += '<option value="Piazza di S. Maria in Istrada">Piazza di S. Maria in Istrada</option>';
+            toponimo_options_str  += '<option value="Piazza di S. Pietro Martire">Piazza di S. Pietro Martire</option>';
+            toponimo_options_str  += '<option value="Piazza di S. Pietro martire">Piazza di S. Pietro martire</option>';
+            toponimo_options_str  += '<option value="Piazza di carrobiolo">Piazza di carrobiolo</option>';
+            toponimo_options_str  += '<option value="Piazza e Contrada del Duomo">Piazza e Contrada del Duomo</option>';
+            toponimo_options_str  += '<option value="Piazza e Contrada di S. Pietro Martire">Piazza e Contrada di S. Pietro Martire</option>';
+            toponimo_options_str  += '<option value="Piazzale Corticella">Piazzale Corticella</option>';
+            toponimo_options_str  += '<option value="Piazzale del Duomo">Piazzale del Duomo</option>';
+            toponimo_options_str  += '<option value="Piazzale del Monte di Pietà">Piazzale del Monte di Pietà</option>';
+            toponimo_options_str  += '<option value="Piazzale delle Case rotte">Piazzale delle Case rotte</option>';
+            toponimo_options_str  += '<option value="Piazzale delle case rotte">Piazzale delle case rotte</option>';
+            toponimo_options_str  += '<option value="Piazzale e Vicolo delle Case rotte">Piazzale e Vicolo delle Case rotte</option>';
+            toponimo_options_str  += '<option value="Piodo">Piodo</option>';
+            toponimo_options_str  += '<option value="Poccina">Poccina</option>';
+            toponimo_options_str  += '<option value="Ponchione">Ponchione</option>';
+            toponimo_options_str  += '<option value="Ponte S. Gerardino">Ponte S. Gerardino</option>';
+            toponimo_options_str  += '<option value="Ponte S. Gerardo">Ponte S. Gerardo</option>';
+            toponimo_options_str  += '<option value="Ponte di Lecco">Ponte di Lecco</option>';
+            toponimo_options_str  += '<option value="Porcellina">Porcellina</option>';
+            toponimo_options_str  += '<option value="Pradino">Pradino</option>';
+            toponimo_options_str  += '<option value="Pradino della Gualtera">Pradino della Gualtera</option>';
+            toponimo_options_str  += '<option value="Prati del Dosso">Prati del Dosso</option>';
+            toponimo_options_str  += '<option value="Prati della Colombaja">Prati della Colombaja</option>';
+            toponimo_options_str  += '<option value="Prati della bocca Lupa">Prati della bocca Lupa</option>';
+            toponimo_options_str  += '<option value="Prati vecchi">Prati vecchi</option>';
+            toponimo_options_str  += '<option value="Prato della Cassina">Prato della Cassina</option>';
+            toponimo_options_str  += '<option value="Prato della Fornace">Prato della Fornace</option>';
+            toponimo_options_str  += '<option value="Prato della Porcellina">Prato della Porcellina</option>';
+            toponimo_options_str  += '<option value="Prato delle Grazie vecchie">Prato delle Grazie vecchie</option>';
+            toponimo_options_str  += '<option value="Prato delle Sgneppe/Sgueppe">Prato delle Sgneppe/Sgueppe</option>';
+            toponimo_options_str  += '<option value="Prato delle diciotto pertiche">Prato delle diciotto pertiche</option>';
+            toponimo_options_str  += '<option value="Prato grande">Prato grande</option>';
+            toponimo_options_str  += '<option value="Prato lungo">Prato lungo</option>';
+            toponimo_options_str  += '<option value="Pugnone">Pugnone</option>';
+            toponimo_options_str  += '<option value="Quadretto">Quadretto</option>';
+            toponimo_options_str  += '<option value="Quadretto di casa">Quadretto di casa</option>';
+            toponimo_options_str  += '<option value="Quadro Grande">Quadro Grande</option>';
+            toponimo_options_str  += '<option value="Quadro Maino">Quadro Maino</option>';
+            toponimo_options_str  += '<option value="Quadro Mambretti">Quadro Mambretti</option>';
+            toponimo_options_str  += '<option value="Quadro a Levante">Quadro a Levante</option>';
+            toponimo_options_str  += '<option value="Quadro a Ponente">Quadro a Ponente</option>';
+            toponimo_options_str  += '<option value="Quadro d&apos;avanti">Quadro d&apos;avanti</option>';
+            toponimo_options_str  += '<option value="Quadro del Cassignolo">Quadro del Cassignolo</option>';
+            toponimo_options_str  += '<option value="Quadro del Colombajo Superiore">Quadro del Colombajo Superiore</option>';
+            toponimo_options_str  += '<option value="Quadro del Colombajo superiore">Quadro del Colombajo superiore</option>';
+            toponimo_options_str  += '<option value="Quadro del Giardino">Quadro del Giardino</option>';
+            toponimo_options_str  += '<option value="Quadro del Laberinto">Quadro del Laberinto</option>';
+            toponimo_options_str  += '<option value="Quadro del Sole">Quadro del Sole</option>';
+            toponimo_options_str  += '<option value="Quadro della Bettola">Quadro della Bettola</option>';
+            toponimo_options_str  += '<option value="Quadro della Cassina">Quadro della Cassina</option>';
+            toponimo_options_str  += '<option value="Quadro della Cassina dei Prati">Quadro della Cassina dei Prati</option>';
+            toponimo_options_str  += '<option value="Quadro della Gasparina">Quadro della Gasparina</option>';
+            toponimo_options_str  += '<option value="Quadro della Strada">Quadro della Strada</option>';
+            toponimo_options_str  += '<option value="Quadro della Tribionina">Quadro della Tribionina</option>';
+            toponimo_options_str  += '<option value="Quadro di S. Albino">Quadro di S. Albino</option>';
+            toponimo_options_str  += '<option value="Quadro di S. Orsola">Quadro di S. Orsola</option>';
+            toponimo_options_str  += '<option value="Quadro di casa">Quadro di casa</option>';
+            toponimo_options_str  += '<option value="Quadro di fianco">Quadro di fianco</option>';
+            toponimo_options_str  += '<option value="Quadro di mezzo">Quadro di mezzo</option>';
+            toponimo_options_str  += '<option value="Quadro di sopra">Quadro di sopra</option>';
+            toponimo_options_str  += '<option value="Quadro di sotto">Quadro di sotto</option>';
+            toponimo_options_str  += '<option value="Quadro di sotto e di sopra">Quadro di sotto e di sopra</option>';
+            toponimo_options_str  += '<option value="Quadro dietro la Cassina">Quadro dietro la Cassina</option>';
+            toponimo_options_str  += '<option value="Quadro grande">Quadro grande</option>';
+            toponimo_options_str  += '<option value="Quadro grande della Guerrina">Quadro grande della Guerrina</option>';
+            toponimo_options_str  += '<option value="Quadro in fondo">Quadro in fondo</option>';
+            toponimo_options_str  += '<option value="Quadro lungo">Quadro lungo</option>';
+            toponimo_options_str  += '<option value="Quadro lungo di sopra">Quadro lungo di sopra</option>';
+            toponimo_options_str  += '<option value="Quadro lungo di sotto">Quadro lungo di sotto</option>';
+            toponimo_options_str  += '<option value="Quadro mezzano">Quadro mezzano</option>';
+            toponimo_options_str  += '<option value="Quadro primo">Quadro primo</option>';
+            toponimo_options_str  += '<option value="Quadro secondo">Quadro secondo</option>';
+            toponimo_options_str  += '<option value="R. Parco">R. Parco</option>';
+            toponimo_options_str  += '<option value="R. Parco = Al Pioppone">R. Parco = Al Pioppone</option>';
+            toponimo_options_str  += '<option value="R. Parco = Alla Faggianaja">R. Parco = Alla Faggianaja</option>';
+            toponimo_options_str  += '<option value="R. Parco = Alla faggianaja">R. Parco = Alla faggianaja</option>';
+            toponimo_options_str  += '<option value="R. Parco = Baravaglia">R. Parco = Baravaglia</option>';
+            toponimo_options_str  += '<option value="R. Parco = Baravaglio">R. Parco = Baravaglio</option>';
+            toponimo_options_str  += '<option value="R. Parco = Bosco della Fontana">R. Parco = Bosco della Fontana</option>';
+            toponimo_options_str  += '<option value="R. Parco = Campagna del Serraglio">R. Parco = Campagna del Serraglio</option>';
+            toponimo_options_str  += '<option value="R. Parco = Campagna dell&apos;Orto">R. Parco = Campagna dell&apos;Orto</option>';
+            toponimo_options_str  += '<option value="R. Parco = Campagna dell&apos;Uccellanda">R. Parco = Campagna dell&apos;Uccellanda</option>';
+            toponimo_options_str  += '<option value="R. Parco = Campagna di S. Giorgio">R. Parco = Campagna di S. Giorgio</option>';
+            toponimo_options_str  += '<option value="R. Parco = Campagna di mezzo">R. Parco = Campagna di mezzo</option>';
+            toponimo_options_str  += '<option value="R. Parco = Campagna di sopra">R. Parco = Campagna di sopra</option>';
+            toponimo_options_str  += '<option value="R. Parco = Campo Fornasetta">R. Parco = Campo Fornasetta</option>';
+            toponimo_options_str  += '<option value="R. Parco = Campo dell&apos;Orto">R. Parco = Campo dell&apos;Orto</option>';
+            toponimo_options_str  += '<option value="R. Parco = Campo della Faggianaja Tedesca">R. Parco = Campo della Faggianaja Tedesca</option>';
+            toponimo_options_str  += '<option value="R. Parco = Casalta nuova">R. Parco = Casalta nuova</option>';
+            toponimo_options_str  += '<option value="R. Parco = Casalta vecchia">R. Parco = Casalta vecchia</option>';
+            toponimo_options_str  += '<option value="R. Parco = Cassina Caimi">R. Parco = Cassina Caimi</option>';
+            toponimo_options_str  += '<option value="R. Parco = Cassina Fontana">R. Parco = Cassina Fontana</option>';
+            toponimo_options_str  += '<option value="R. Parco = Colombivolo">R. Parco = Colombivolo</option>';
+            toponimo_options_str  += '<option value="R. Parco = Faggianaja Tedesca">R. Parco = Faggianaja Tedesca</option>';
+            toponimo_options_str  += '<option value="R. Parco = Fornsaetta">R. Parco = Fornsaetta</option>';
+            toponimo_options_str  += '<option value="R. Parco = Frutteto">R. Parco = Frutteto</option>';
+            toponimo_options_str  += '<option value="R. Parco = Gerazza">R. Parco = Gerazza</option>';
+            toponimo_options_str  += '<option value="R. Parco = I Traversi">R. Parco = I Traversi</option>';
+            toponimo_options_str  += '<option value="R. Parco = Il Cantone">R. Parco = Il Cantone</option>';
+            toponimo_options_str  += '<option value="R. Parco = Il Larice">R. Parco = Il Larice</option>';
+            toponimo_options_str  += '<option value="R. Parco = Il cantone">R. Parco = Il cantone</option>';
+            toponimo_options_str  += '<option value="R. Parco = La Passerina">R. Parco = La Passerina</option>';
+            toponimo_options_str  += '<option value="R. Parco = La vigna">R. Parco = La vigna</option>';
+            toponimo_options_str  += '<option value="R. Parco = Mirabellino">R. Parco = Mirabellino</option>';
+            toponimo_options_str  += '<option value="R. Parco = Mirabello">R. Parco = Mirabello</option>';
+            toponimo_options_str  += '<option value="R. Parco = Molino del Cantone">R. Parco = Molino del Cantone</option>';
+            toponimo_options_str  += '<option value="R. Parco = Montagnetta">R. Parco = Montagnetta</option>';
+            toponimo_options_str  += '<option value="R. Parco = Monte">R. Parco = Monte</option>';
+            toponimo_options_str  += '<option value="R. Parco = Monza">R. Parco = Monza</option>';
+            toponimo_options_str  += '<option value="R. Parco = Pioppone">R. Parco = Pioppone</option>';
+            toponimo_options_str  += '<option value="R. Parco = Ponticella dei Salici">R. Parco = Ponticella dei Salici</option>';
+            toponimo_options_str  += '<option value="R. Parco = Porta di Vedano">R. Parco = Porta di Vedano</option>';
+            toponimo_options_str  += '<option value="R. Parco = R. Parco = Viale delle Noci">R. Parco = R. Parco = Viale delle Noci</option>';
+            toponimo_options_str  += '<option value="R. Parco = Roccolo">R. Parco = Roccolo</option>';
+            toponimo_options_str  += '<option value="R. Parco = Serraglio">R. Parco = Serraglio</option>';
+            toponimo_options_str  += '<option value="R. Parco = Strada Inglese">R. Parco = Strada Inglese</option>';
+            toponimo_options_str  += '<option value="R. Parco = Suberia">R. Parco = Suberia</option>';
+            toponimo_options_str  += '<option value="R. Parco = Sulteria">R. Parco = Sulteria</option>';
+            toponimo_options_str  += '<option value="R. Parco = Traverso">R. Parco = Traverso</option>';
+            toponimo_options_str  += '<option value="R. Parco = Viale dei Platani">R. Parco = Viale dei Platani</option>';
+            toponimo_options_str  += '<option value="R. Parco = Viale dei Platani e delle Noci">R. Parco = Viale dei Platani e delle Noci</option>';
+            toponimo_options_str  += '<option value="R. Parco = Viale del Chincone">R. Parco = Viale del Chincone</option>';
+            toponimo_options_str  += '<option value="R. Parco = Viale della Noci e dei Platani">R. Parco = Viale della Noci e dei Platani</option>';
+            toponimo_options_str  += '<option value="R. Parco = Viale delle Noci">R. Parco = Viale delle Noci</option>';
+            toponimo_options_str  += '<option value="R. Parco = Viale di S. Giorgio">R. Parco = Viale di S. Giorgio</option>';
+            toponimo_options_str  += '<option value="R. Parco =Il Cantone">R. Parco =Il Cantone</option>';
+            toponimo_options_str  += '<option value="R. Parco= Al Mulino S. Giorgio">R. Parco= Al Mulino S. Giorgio</option>';
+            toponimo_options_str  += '<option value="R. Parco= Alla Faggianaja">R. Parco= Alla Faggianaja</option>';
+            toponimo_options_str  += '<option value="R. Parco= Bosco bello">R. Parco= Bosco bello</option>';
+            toponimo_options_str  += '<option value="R. Parco= Campagna">R. Parco= Campagna</option>';
+            toponimo_options_str  += '<option value="R. Parco= Campagna di mezzo">R. Parco= Campagna di mezzo</option>';
+            toponimo_options_str  += '<option value="R. Parco= Campello">R. Parco= Campello</option>';
+            toponimo_options_str  += '<option value="R. Parco= Campo ricco">R. Parco= Campo ricco</option>';
+            toponimo_options_str  += '<option value="R. Parco= Cass. S. Maria Maddalena">R. Parco= Cass. S. Maria Maddalena</option>';
+            toponimo_options_str  += '<option value="R. Parco= Cassina Bastia">R. Parco= Cassina Bastia</option>';
+            toponimo_options_str  += '<option value="R. Parco= Cassina Cattabrega">R. Parco= Cassina Cattabrega</option>';
+            toponimo_options_str  += '<option value="R. Parco= Cassina Cernusca">R. Parco= Cassina Cernusca</option>';
+            toponimo_options_str  += '<option value="R. Parco= Cassina Fontana">R. Parco= Cassina Fontana</option>';
+            toponimo_options_str  += '<option value="R. Parco= Cassina Frutteto">R. Parco= Cassina Frutteto</option>';
+            toponimo_options_str  += '<option value="R. Parco= Cassina Nuova">R. Parco= Cassina Nuova</option>';
+            toponimo_options_str  += '<option value="R. Parco= Cassina S. Fidele">R. Parco= Cassina S. Fidele</option>';
+            toponimo_options_str  += '<option value="R. Parco= Cassina Zoccorina">R. Parco= Cassina Zoccorina</option>';
+            toponimo_options_str  += '<option value="R. Parco= Cassina del Sole">R. Parco= Cassina del Sole</option>';
+            toponimo_options_str  += '<option value="R. Parco= Colombivolo">R. Parco= Colombivolo</option>';
+            toponimo_options_str  += '<option value="R. Parco= Costa">R. Parco= Costa</option>';
+            toponimo_options_str  += '<option value="R. Parco= Costa alta">R. Parco= Costa alta</option>';
+            toponimo_options_str  += '<option value="R. Parco= Costa bassa">R. Parco= Costa bassa</option>';
+            toponimo_options_str  += '<option value="R. Parco= Faggianaja">R. Parco= Faggianaja</option>';
+            toponimo_options_str  += '<option value="R. Parco= Foletta">R. Parco= Foletta</option>';
+            toponimo_options_str  += '<option value="R. Parco= Gerazza">R. Parco= Gerazza</option>';
+            toponimo_options_str  += '<option value="R. Parco= Gerazza di sopra">R. Parco= Gerazza di sopra</option>';
+            toponimo_options_str  += '<option value="R. Parco= Gerazze">R. Parco= Gerazze</option>';
+            toponimo_options_str  += '<option value="R. Parco= Geroncello">R. Parco= Geroncello</option>';
+            toponimo_options_str  += '<option value="R. Parco= Gerone">R. Parco= Gerone</option>';
+            toponimo_options_str  += '<option value="R. Parco= Medeghetta">R. Parco= Medeghetta</option>';
+            toponimo_options_str  += '<option value="R. Parco= Mirabellino">R. Parco= Mirabellino</option>';
+            toponimo_options_str  += '<option value="R. Parco= Mirandola">R. Parco= Mirandola</option>';
+            toponimo_options_str  += '<option value="R. Parco= Monzina">R. Parco= Monzina</option>';
+            toponimo_options_str  += '<option value="R. Parco= Mulini asciutti">R. Parco= Mulini asciutti</option>';
+            toponimo_options_str  += '<option value="R. Parco= Mulini di S. Giorgio">R. Parco= Mulini di S. Giorgio</option>';
+            toponimo_options_str  += '<option value="R. Parco= Mulino S. Giorgio">R. Parco= Mulino S. Giorgio</option>';
+            toponimo_options_str  += '<option value="R. Parco= Mulino di S. Giorgio">R. Parco= Mulino di S. Giorgio</option>';
+            toponimo_options_str  += '<option value="R. Parco= Mura di S. Giorgio">R. Parco= Mura di S. Giorgio</option>';
+            toponimo_options_str  += '<option value="R. Parco= Novelle">R. Parco= Novelle</option>';
+            toponimo_options_str  += '<option value="R. Parco= Pinera">R. Parco= Pinera</option>';
+            toponimo_options_str  += '<option value="R. Parco= Ripa del Lambro">R. Parco= Ripa del Lambro</option>';
+            toponimo_options_str  += '<option value="R. Parco= S. Giorgio">R. Parco= S. Giorgio</option>';
+            toponimo_options_str  += '<option value="R. Parco= Scuderia reale">R. Parco= Scuderia reale</option>';
+            toponimo_options_str  += '<option value="R. Parco= Serraglio">R. Parco= Serraglio</option>';
+            toponimo_options_str  += '<option value="R. Parco= Sgrattignana">R. Parco= Sgrattignana</option>';
+            toponimo_options_str  += '<option value="R. Parco= Viale delle Noci">R. Parco= Viale delle Noci</option>';
+            toponimo_options_str  += '<option value="R. Parco= faggianaja">R. Parco= faggianaja</option>';
+            toponimo_options_str  += '<option value="R. Villa">R. Villa</option>';
+            toponimo_options_str  += '<option value="R. parco= Cassina Costa">R. parco= Cassina Costa</option>';
+            toponimo_options_str  += '<option value="Redefosso">Redefosso</option>';
+            toponimo_options_str  += '<option value="Refosso">Refosso</option>';
+            toponimo_options_str  += '<option value="Ripa della Fontana Busca">Ripa della Fontana Busca</option>';
+            toponimo_options_str  += '<option value="Roccolo">Roccolo</option>';
+            toponimo_options_str  += '<option value="Ronchetto di sopra">Ronchetto di sopra</option>';
+            toponimo_options_str  += '<option value="Ronchetto di sotto">Ronchetto di sotto</option>';
+            toponimo_options_str  += '<option value="Rondò">Rondò</option>';
+            toponimo_options_str  += '<option value="Rondò della Gallarana">Rondò della Gallarana</option>';
+            toponimo_options_str  += '<option value="Rosetta">Rosetta</option>';
+            toponimo_options_str  += '<option value="S. Albino">S. Albino</option>';
+            toponimo_options_str  += '<option value="S. Alessandro">S. Alessandro</option>';
+            toponimo_options_str  += '<option value="S. Donarino">S. Donarino</option>';
+            toponimo_options_str  += '<option value="S. Donato">S. Donato</option>';
+            toponimo_options_str  += '<option value="S. Gerardo">S. Gerardo</option>';
+            toponimo_options_str  += '<option value="S. Giacomo">S. Giacomo</option>';
+            toponimo_options_str  += '<option value="S. Lorenzo">S. Lorenzo</option>';
+            toponimo_options_str  += '<option value="S. Martino">S. Martino</option>';
+            toponimo_options_str  += '<option value="S. Martino ai Cappuccini">S. Martino ai Cappuccini</option>';
+            toponimo_options_str  += '<option value="S. Pietro">S. Pietro</option>';
+            toponimo_options_str  += '<option value="S. Rocco">S. Rocco</option>';
+            toponimo_options_str  += '<option value="Sartirana">Sartirana</option>';
+            toponimo_options_str  += '<option value="Sirtoli">Sirtoli</option>';
+            toponimo_options_str  += '<option value="Spalto dell&apos;Isolino">Spalto dell&apos;Isolino</option>';
+            toponimo_options_str  += '<option value="Spalto di Piodo">Spalto di Piodo</option>';
+            toponimo_options_str  += '<option value="Spalto di S. Maddalena">Spalto di S. Maddalena</option>';
+            toponimo_options_str  += '<option value="Spiazzetti">Spiazzetti</option>';
+            toponimo_options_str  += '<option value="Stazione di Monza">Stazione di Monza</option>';
+            toponimo_options_str  += '<option value="Strabosa">Strabosa</option>';
+            toponimo_options_str  += '<option value="Strada Aldina">Strada Aldina</option>';
+            toponimo_options_str  += '<option value="Strada Ferdinandea">Strada Ferdinandea</option>';
+            toponimo_options_str  += '<option value="Strada Ferrata">Strada Ferrata</option>';
+            toponimo_options_str  += '<option value="Strada Ferrata I. da Milano a Monza">Strada Ferrata I. da Milano a Monza</option>';
+            toponimo_options_str  += '<option value="Strada Massonerio">Strada Massonerio</option>';
+            toponimo_options_str  += '<option value="Strada Mornera">Strada Mornera</option>';
+            toponimo_options_str  += '<option value="Strada Santo Sirolo">Strada Santo Sirolo</option>';
+            toponimo_options_str  += '<option value="Strada Valosa">Strada Valosa</option>';
+            toponimo_options_str  += '<option value="Strada Vecchia">Strada Vecchia</option>';
+            toponimo_options_str  += '<option value="Strada alla Vignazza">Strada alla Vignazza</option>';
+            toponimo_options_str  += '<option value="Strada de&apos;Gradi">Strada de&apos;Gradi</option>';
+            toponimo_options_str  += '<option value="Strada dei Cappuccini">Strada dei Cappuccini</option>';
+            toponimo_options_str  += '<option value="Strada dei Caprotti">Strada dei Caprotti</option>';
+            toponimo_options_str  += '<option value="Strada dei Mulini">Strada dei Mulini</option>';
+            toponimo_options_str  += '<option value="Strada dei Mulini del castello">Strada dei Mulini del castello</option>';
+            toponimo_options_str  += '<option value="Strada dei Salvioni">Strada dei Salvioni</option>';
+            toponimo_options_str  += '<option value="Strada del Casotto">Strada del Casotto</option>';
+            toponimo_options_str  += '<option value="Strada del Cimitero">Strada del Cimitero</option>';
+            toponimo_options_str  += '<option value="Strada del Rondò">Strada del Rondò</option>';
+            toponimo_options_str  += '<option value="Strada dell&apos;Isolino">Strada dell&apos;Isolino</option>';
+            toponimo_options_str  += '<option value="Strada dell&apos;Ospitale vecchio">Strada dell&apos;Ospitale vecchio</option>';
+            toponimo_options_str  += '<option value="Strada della Balossa">Strada della Balossa</option>';
+            toponimo_options_str  += '<option value="Strada della Balotta">Strada della Balotta</option>';
+            toponimo_options_str  += '<option value="Strada della Birona">Strada della Birona</option>';
+            toponimo_options_str  += '<option value="Strada della Cassinazza">Strada della Cassinazza</option>';
+            toponimo_options_str  += '<option value="Strada della Lorena">Strada della Lorena</option>';
+            toponimo_options_str  += '<option value="Strada della Mornerina">Strada della Mornerina</option>';
+            toponimo_options_str  += '<option value="Strada della Vignazza">Strada della Vignazza</option>';
+            toponimo_options_str  += '<option value="Strada delle Cassine">Strada delle Cassine</option>';
+            toponimo_options_str  += '<option value="Strada delle Grazie vecchie">Strada delle Grazie vecchie</option>';
+            toponimo_options_str  += '<option value="Strada di Agrate">Strada di Agrate</option>';
+            toponimo_options_str  += '<option value="Strada di Baraggia">Strada di Baraggia</option>';
+            toponimo_options_str  += '<option value="Strada di Cassignolo">Strada di Cassignolo</option>';
+            toponimo_options_str  += '<option value="Strada di Concorezzo">Strada di Concorezzo</option>';
+            toponimo_options_str  += '<option value="Strada di Lecco">Strada di Lecco</option>';
+            toponimo_options_str  += '<option value="Strada di Muggiò">Strada di Muggiò</option>';
+            toponimo_options_str  += '<option value="Strada di Piodo">Strada di Piodo</option>';
+            toponimo_options_str  += '<option value="Strada di Robecco">Strada di Robecco</option>';
+            toponimo_options_str  += '<option value="Strada di S. Croce">Strada di S. Croce</option>';
+            toponimo_options_str  += '<option value="Strada di Triante">Strada di Triante</option>';
+            toponimo_options_str  += '<option value="Strada di circonvallazione">Strada di circonvallazione</option>';
+            toponimo_options_str  += '<option value="Strada ferrata">Strada ferrata</option>';
+            toponimo_options_str  += '<option value="Strada per Muggiò">Strada per Muggiò</option>';
+            toponimo_options_str  += '<option value="Stradone del Mulinetto">Stradone del Mulinetto</option>';
+            toponimo_options_str  += '<option value="Stradone del Rondò">Stradone del Rondò</option>';
+            toponimo_options_str  += '<option value="Stretta di Carrobiolo">Stretta di Carrobiolo</option>';
+            toponimo_options_str  += '<option value="Suata">Suata</option>';
+            toponimo_options_str  += '<option value="Tavola dei fabbricati">Tavola dei fabbricati</option>';
+            toponimo_options_str  += '<option value="Tavola fabbricati">Tavola fabbricati</option>';
+            toponimo_options_str  += '<option value="Terra alta">Terra alta</option>';
+            toponimo_options_str  += '<option value="Terraggio del Ponte di Lecco">Terraggio del Ponte di Lecco</option>';
+            toponimo_options_str  += '<option value="Terraggio di Carrobiolo">Terraggio di Carrobiolo</option>';
+            toponimo_options_str  += '<option value="Terraggio di Porta Lodi">Terraggio di Porta Lodi</option>';
+            toponimo_options_str  += '<option value="Terraggio di Porta Milano">Terraggio di Porta Milano</option>';
+            toponimo_options_str  += '<option value="Terraggio di S. Biagio">Terraggio di S. Biagio</option>';
+            toponimo_options_str  += '<option value="Terraggio di S. Biagio e Contrada Corte Longa">Terraggio di S. Biagio e Contrada Corte Longa</option>';
+            toponimo_options_str  += '<option value="Terraggio di S. Biagio e Contrada Novara">Terraggio di S. Biagio e Contrada Novara</option>';
+            toponimo_options_str  += '<option value="Terraggio di S. Orsola">Terraggio di S. Orsola</option>';
+            toponimo_options_str  += '<option value="Terraggio di S. biagio">Terraggio di S. biagio</option>';
+            toponimo_options_str  += '<option value="Terraggio di carrobiolo">Terraggio di carrobiolo</option>';
+            toponimo_options_str  += '<option value="Terraggio di porta Lodi">Terraggio di porta Lodi</option>';
+            toponimo_options_str  += '<option value="Terragio di S. Biagio">Terragio di S. Biagio</option>';
+            toponimo_options_str  += '<option value="Torneamento">Torneamento</option>';
+            toponimo_options_str  += '<option value="Transito dell&apos;Isolino">Transito dell&apos;Isolino</option>';
+            toponimo_options_str  += '<option value="Traversagna">Traversagna</option>';
+            toponimo_options_str  += '<option value="Traversagno">Traversagno</option>';
+            toponimo_options_str  += '<option value="Traversagno di sopra">Traversagno di sopra</option>';
+            toponimo_options_str  += '<option value="Traversagno di sotto">Traversagno di sotto</option>';
+            toponimo_options_str  += '<option value="Triante">Triante</option>';
+            toponimo_options_str  += '<option value="Tribione">Tribione</option>';
+            toponimo_options_str  += '<option value="Valere">Valere</option>';
+            toponimo_options_str  += '<option value="Vallassa">Vallassa</option>';
+            toponimo_options_str  += '<option value="Vallassetta">Vallassetta</option>';
+            toponimo_options_str  += '<option value="Valle">Valle</option>';
+            toponimo_options_str  += '<option value="Vallone">Vallone</option>';
+            toponimo_options_str  += '<option value="Valsasnina prima">Valsasnina prima</option>';
+            toponimo_options_str  += '<option value="Valsasnina seconda">Valsasnina seconda</option>';
+            toponimo_options_str  += '<option value="Viale">Viale</option>';
+            toponimo_options_str  += '<option value="Viale alla R. Villa">Viale alla R. Villa</option>';
+            toponimo_options_str  += '<option value="Viale del Cimitero">Viale del Cimitero</option>';
+            toponimo_options_str  += '<option value="Viale del Vignolo">Viale del Vignolo</option>';
+            toponimo_options_str  += '<option value="Vicolo Casarma">Vicolo Casarma</option>';
+            toponimo_options_str  += '<option value="Vicolo Moriggiano">Vicolo Moriggiano</option>';
+            toponimo_options_str  += '<option value="Vicolo Morigguano">Vicolo Morigguano</option>';
+            toponimo_options_str  += '<option value="Vicolo S. Martino">Vicolo S. Martino</option>';
+            toponimo_options_str  += '<option value="Vicolo S. Orsola">Vicolo S. Orsola</option>';
+            toponimo_options_str  += '<option value="Vicolo Zanetta">Vicolo Zanetta</option>';
+            toponimo_options_str  += '<option value="Vicolo al Ponte d&apos;Assi">Vicolo al Ponte d&apos;Assi</option>';
+            toponimo_options_str  += '<option value="Vicolo casarma">Vicolo casarma</option>';
+            toponimo_options_str  += '<option value="Vicolo degli Assi">Vicolo degli Assi</option>';
+            toponimo_options_str  += '<option value="Vicolo degli Ossi">Vicolo degli Ossi</option>';
+            toponimo_options_str  += '<option value="Vicolo dei Mulini">Vicolo dei Mulini</option>';
+            toponimo_options_str  += '<option value="Vicolo dei Mulini e Spalto di S. Maddalena">Vicolo dei Mulini e Spalto di S. Maddalena</option>';
+            toponimo_options_str  += '<option value="Vicolo dei Mulino">Vicolo dei Mulino</option>';
+            toponimo_options_str  += '<option value="Vicolo del Verzaro">Vicolo del Verzaro</option>';
+            toponimo_options_str  += '<option value="Vicolo della Canonica">Vicolo della Canonica</option>';
+            toponimo_options_str  += '<option value="Vicolo delle Case rotte">Vicolo delle Case rotte</option>';
+            toponimo_options_str  += '<option value="Vicolo di Carrobiolo">Vicolo di Carrobiolo</option>';
+            toponimo_options_str  += '<option value="Vicolo di S. Elisabetta">Vicolo di S. Elisabetta</option>';
+            toponimo_options_str  += '<option value="Vicolo di S. Margherita">Vicolo di S. Margherita</option>';
+            toponimo_options_str  += '<option value="Vicolo di S. Martino">Vicolo di S. Martino</option>';
+            toponimo_options_str  += '<option value="Vicolo di S. Maurizio">Vicolo di S. Maurizio</option>';
+            toponimo_options_str  += '<option value="Vicolo di S. Orsola">Vicolo di S. Orsola</option>';
+            toponimo_options_str  += '<option value="Vicolo e Stretta di S. Ignazio">Vicolo e Stretta di S. Ignazio</option>';
+            toponimo_options_str  += '<option value="Vigna">Vigna</option>';
+            toponimo_options_str  += '<option value="Vigna Bacco">Vigna Bacco</option>';
+            toponimo_options_str  += '<option value="Vigna Baldirona">Vigna Baldirona</option>';
+            toponimo_options_str  += '<option value="Vigna Balosetta">Vigna Balosetta</option>';
+            toponimo_options_str  += '<option value="Vigna Barbona e Badei">Vigna Barbona e Badei</option>';
+            toponimo_options_str  += '<option value="Vigna Bastova/Bastora">Vigna Bastova/Bastora</option>';
+            toponimo_options_str  += '<option value="Vigna Battaglia">Vigna Battaglia</option>';
+            toponimo_options_str  += '<option value="Vigna Busella">Vigna Busella</option>';
+            toponimo_options_str  += '<option value="Vigna Caleffa">Vigna Caleffa</option>';
+            toponimo_options_str  += '<option value="Vigna Castano">Vigna Castano</option>';
+            toponimo_options_str  += '<option value="Vigna Chignola">Vigna Chignola</option>';
+            toponimo_options_str  += '<option value="Vigna Colombaja">Vigna Colombaja</option>';
+            toponimo_options_str  += '<option value="Vigna Colombajo">Vigna Colombajo</option>';
+            toponimo_options_str  += '<option value="Vigna Fornace">Vigna Fornace</option>';
+            toponimo_options_str  += '<option value="Vigna Fornasetta">Vigna Fornasetta</option>';
+            toponimo_options_str  += '<option value="Vigna Gallarana">Vigna Gallarana</option>';
+            toponimo_options_str  += '<option value="Vigna Gamba">Vigna Gamba</option>';
+            toponimo_options_str  += '<option value="Vigna Giardino">Vigna Giardino</option>';
+            toponimo_options_str  += '<option value="Vigna Guerrina">Vigna Guerrina</option>';
+            toponimo_options_str  += '<option value="Vigna Manganella">Vigna Manganella</option>';
+            toponimo_options_str  += '<option value="Vigna Mantegazza">Vigna Mantegazza</option>';
+            toponimo_options_str  += '<option value="Vigna Maura">Vigna Maura</option>';
+            toponimo_options_str  += '<option value="Vigna Mirana">Vigna Mirana</option>';
+            toponimo_options_str  += '<option value="Vigna Mona">Vigna Mona</option>';
+            toponimo_options_str  += '<option value="Vigna Moresini">Vigna Moresini</option>';
+            toponimo_options_str  += '<option value="Vigna Novella">Vigna Novella</option>';
+            toponimo_options_str  += '<option value="Vigna Paleari">Vigna Paleari</option>';
+            toponimo_options_str  += '<option value="Vigna Panzera">Vigna Panzera</option>';
+            toponimo_options_str  += '<option value="Vigna Ravasa">Vigna Ravasa</option>';
+            toponimo_options_str  += '<option value="Vigna Ronchetto">Vigna Ronchetto</option>';
+            toponimo_options_str  += '<option value="Vigna S. Giorgio">Vigna S. Giorgio</option>';
+            toponimo_options_str  += '<option value="Vigna S. Lorenzo">Vigna S. Lorenzo</option>';
+            toponimo_options_str  += '<option value="Vigna Seregna">Vigna Seregna</option>';
+            toponimo_options_str  += '<option value="Vigna Taccona">Vigna Taccona</option>';
+            toponimo_options_str  += '<option value="Vigna Traversagna">Vigna Traversagna</option>';
+            toponimo_options_str  += '<option value="Vigna Triante">Vigna Triante</option>';
+            toponimo_options_str  += '<option value="Vigna Vallasca">Vigna Vallasca</option>';
+            toponimo_options_str  += '<option value="Vigna Valletta">Vigna Valletta</option>';
+            toponimo_options_str  += '<option value="Vigna Varenna">Vigna Varenna</option>';
+            toponimo_options_str  += '<option value="Vigna Vecchia">Vigna Vecchia</option>';
+            toponimo_options_str  += '<option value="Vigna Verra">Vigna Verra</option>';
+            toponimo_options_str  += '<option value="Vigna al Mulino Mambretti">Vigna al Mulino Mambretti</option>';
+            toponimo_options_str  += '<option value="Vigna al Rondò">Vigna al Rondò</option>';
+            toponimo_options_str  += '<option value="Vigna allo Stradone">Vigna allo Stradone</option>';
+            toponimo_options_str  += '<option value="Vigna alta">Vigna alta</option>';
+            toponimo_options_str  += '<option value="Vigna bassa">Vigna bassa</option>';
+            toponimo_options_str  += '<option value="Vigna del Beneficio">Vigna del Beneficio</option>';
+            toponimo_options_str  += '<option value="Vigna del Borghetto">Vigna del Borghetto</option>';
+            toponimo_options_str  += '<option value="Vigna del Giussani">Vigna del Giussani</option>';
+            toponimo_options_str  += '<option value="Vigna del Mazza">Vigna del Mazza</option>';
+            toponimo_options_str  += '<option value="Vigna del luogo">Vigna del luogo</option>';
+            toponimo_options_str  += '<option value="Vigna della Bettola">Vigna della Bettola</option>';
+            toponimo_options_str  += '<option value="Vigna della Bressanella">Vigna della Bressanella</option>';
+            toponimo_options_str  += '<option value="Vigna della Cassinazza">Vigna della Cassinazza</option>';
+            toponimo_options_str  += '<option value="Vigna della Ghisova">Vigna della Ghisova</option>';
+            toponimo_options_str  += '<option value="Vigna delle Oche">Vigna delle Oche</option>';
+            toponimo_options_str  += '<option value="Vigna di Casa">Vigna di Casa</option>';
+            toponimo_options_str  += '<option value="Vigna di S. Biagio">Vigna di S. Biagio</option>';
+            toponimo_options_str  += '<option value="Vigna di casa">Vigna di casa</option>';
+            toponimo_options_str  += '<option value="Vigna di sopra">Vigna di sopra</option>';
+            toponimo_options_str  += '<option value="Vigna di sotto">Vigna di sotto</option>';
+            toponimo_options_str  += '<option value="Vigna longa">Vigna longa</option>';
+            toponimo_options_str  += '<option value="Vigna lunga">Vigna lunga</option>';
+            toponimo_options_str  += '<option value="Vigna novella">Vigna novella</option>';
+            toponimo_options_str  += '<option value="Vigna rabbia">Vigna rabbia</option>';
+            toponimo_options_str  += '<option value="Vigna vecchia">Vigna vecchia</option>';
+            toponimo_options_str  += '<option value="Vignazza">Vignazza</option>';
+            toponimo_options_str  += '<option value="Vignetta">Vignetta</option>';
+            toponimo_options_str  += '<option value="Vignetta allo Stradone">Vignetta allo Stradone</option>';
+            toponimo_options_str  += '<option value="Vignoli">Vignoli</option>';
+            toponimo_options_str  += '<option value="Vignolo">Vignolo</option>';
+            toponimo_options_str  += '<option value="Vignolo del Chioso">Vignolo del Chioso</option>';
+            toponimo_options_str  += '<option value="Vignolo del Chioso verso Levante">Vignolo del Chioso verso Levante</option>';
+            toponimo_options_str  += '<option value="Vignolo del Frate">Vignolo del Frate</option>';
+            toponimo_options_str  += '<option value="Vignolo del Molinaro">Vignolo del Molinaro</option>';
+            toponimo_options_str  += '<option value="Vignolo di casa">Vignolo di casa</option>';
+            toponimo_options_str  += '<option value="Villa Angela">Villa Angela</option>';
+            toponimo_options_str  += '<option value="Villa Attica">Villa Attica</option>';
+            toponimo_options_str  += '<option value="Villa Belgiojoso">Villa Belgiojoso</option>';
+            toponimo_options_str  += '<option value="Villa Belvedere">Villa Belvedere</option>';
+            toponimo_options_str  += '<option value="Villa Boschetto Secondo">Villa Boschetto Secondo</option>';
+            toponimo_options_str  += '<option value="Villa Bruciata">Villa Bruciata</option>';
+            toponimo_options_str  += '<option value="Villa Cappuccina">Villa Cappuccina</option>';
+            toponimo_options_str  += '<option value="Villa Colombajo al Rondò">Villa Colombajo al Rondò</option>';
+            toponimo_options_str  += '<option value="Villa De-Bassini">Villa De-Bassini</option>';
+            toponimo_options_str  += '<option value="Villa Dosso">Villa Dosso</option>';
+            toponimo_options_str  += '<option value="Villa Fornasetta">Villa Fornasetta</option>';
+            toponimo_options_str  += '<option value="Villa Giardino">Villa Giardino</option>';
+            toponimo_options_str  += '<option value="Villa Grassa">Villa Grassa</option>';
+            toponimo_options_str  += '<option value="Villa Litta Modignani">Villa Litta Modignani</option>';
+            toponimo_options_str  += '<option value="Villa Mandolfo">Villa Mandolfo</option>';
+            toponimo_options_str  += '<option value="Villa Mondolfo">Villa Mondolfo</option>';
+            toponimo_options_str  += '<option value="Villa Nuova">Villa Nuova</option>';
+            toponimo_options_str  += '<option value="Villa S. Albino">Villa S. Albino</option>';
+            toponimo_options_str  += '<option value="Villa Tazzini">Villa Tazzini</option>';
+            toponimo_options_str  += '<option value="Villa Valerio">Villa Valerio</option>';
+            toponimo_options_str  += '<option value="Villa Viganoni">Villa Viganoni</option>';
+            toponimo_options_str  += '<option value="Villa Vignola">Villa Vignola</option>';
+            toponimo_options_str  += '<option value="Villa Viscardi">Villa Viscardi</option>';
+            toponimo_options_str  += '<option value="Villa delle Grazie">Villa delle Grazie</option>';
+            toponimo_options_str  += '<option value="Villa nuova">Villa nuova</option>';
+            toponimo_options_str  += '<option value="Villetta Ada">Villetta Ada</option>';
+            toponimo_options_str  += '<option value="Villova">Villova</option>';
+            toponimo_options_str  += '<option value="Volpina">Volpina</option>';
+            toponimo_options_str  += '<option value="Volpino">Volpino</option>';
+            toponimo_options_str  += '<option value="regia villa">regia villa</option>';
+            toponimo_options_str  += '<option value="terraggio di S. Biagio e Contrada Corte Longa">terraggio di S. Biagio e Contrada Corte Longa</option>';
+            sel_toponimo.innerHTML = toponimo_options_str;
+            div_toponimo.appendChild(sel_toponimo);
+            var lab_toponimo = document.createElement('div');
+            //cambio nome elenco filtro layer
+            lab_toponimo.innerHTML = 'Toponimo';
+            lab_toponimo.className = 'filterlabel';
+            div_toponimo.appendChild(lab_toponimo);
+            var reset_toponimo = document.createElement('div');
+            reset_toponimo.innerHTML = 'clear filter';
+            reset_toponimo.className = 'filterlabel';
+            reset_toponimo.onclick = function() {
+                var options = document.getElementById("sel_toponimo").options;
+                for (var i=0; i < options.length; i++) {
+                    options[i].selected = false;
+                }
+                filterFunc();
+            };
+            div_toponimo.appendChild(reset_toponimo);
+        </script>
+    </body>
+</html>
